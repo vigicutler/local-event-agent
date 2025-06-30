@@ -30,7 +30,7 @@ if religious:
     filtered_df = filtered_df[filtered_df["Religious Subtag"].isin(religious)]
 
 st.markdown(f"### 📋 {len(filtered_df)} matching events:")
-st.dataframe(filtered_df[["description", "Topical Theme", "Effort Estimate", "Weather Badge"]])
+st.dataframe(filtered_df[["description", "Topical Theme", "Effort Estimate"]])
 
 # Optional: recommend similar events
 st.markdown("---")
