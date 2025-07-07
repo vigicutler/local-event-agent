@@ -36,10 +36,11 @@ st.title("🌱 NYC Community Event Agent")
 st.markdown("Choose how you'd like to help and find meaningful events near you.")
 
 # === Input Fields ===
-intent_input = st.text_input("🙋‍♀️ How can I help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
+intent_input = st.text_input("🙋‍♀️ How can you help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
 mood_input = st.selectbox("💫 Optional — Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
 zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
 
+# === Action Button ===
 if st.button("Explore"):
     input_clean = intent_input.strip().lower()
 
@@ -56,27 +57,23 @@ if st.button("Explore"):
             final_df["Topical Theme"].isin(all_matches) | final_df["Activity Type"].isin(all_matches)
         ]
     else:
-        # Fallback to basic substring match if fuzzy matches too weak
         filtered = final_df[
             final_df["Topical Theme"].str.contains(input_clean, case=False, na=False) |
             final_df["Activity Type"].str.contains(input_clean, case=False, na=False)
         ]
 
-    # === Optional Mood Filter ===
     if mood_input != "(no preference)":
         filtered = filtered[filtered["Mood/Intent"].str.contains(mood_input, case=False, na=False)]
 
-    # === Optional ZIP Code Filter ===
     if zipcode_input.strip() != "":
         filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
 
-    # === Display Result Count + Cards ===
     st.subheader(f"🔍 Found {len(filtered)} matching events")
 
     for _, row in filtered.iterrows():
         with st.container(border=True):
             st.markdown(f"### {row.get('title', 'Untitled Event')}")
-            st.markdown(f"**Organization:** {row.get('org_title', 'Unknown')}")
+            st.markdown(f"**Organization:** {row.get('org_title', row.get('org_title', 'Unknown'))}")
             st.markdown(f"📍 **Location:** {row.get('primary_loc', 'N/A')}")
             st.markdown(f"🗓️ **Date:** {row.get('start_date_date', 'N/A')}")
             st.markdown(f"🏷️ **Tags:** {row.get('Topical Theme', '')}, {row.get('Effort Estimate', '')}, {row.get('Mood/Intent', '')}")
