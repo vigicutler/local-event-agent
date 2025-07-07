@@ -16,22 +16,21 @@ def load_data():
     raw["summary"] = raw["summary"].fillna("")
 
     # ✅ Merge enriched tags with raw metadata using 'description' ↔ 'summary'
-    merged = pd.merge(
-        enriched,
-        raw,
-        left_on="description",
-        right_on="summary",
-        how="left"
-    )
+  merged = pd.merge(
+    enriched,
+    raw,
+    left_on="description",
+    right_on="summary",
+    how="left",
+    suffixes=("", "_raw")
+)
+
 
     return merged
 
 final_df = load_data()
 
 
-# ✅ Debug: show final columns
-# === Debug: Show column names after merge ===
-st.write("🧪 Columns in final_df:", final_df.columns.tolist())
 
 # st.write("📊 Final columns:", final_df.columns.tolist())
 
@@ -75,15 +74,15 @@ if st.button("Explore"):
     st.subheader(f"🔍 Found {len(filtered)} matching events")
 
     # === Render cards
-    for _, row in filtered.iterrows():
-        with st.container(border=True):
-            st.markdown(f"### {row.get('title', 'Untitled Event')}")
-            st.markdown(f"**Organization:** {row.get('org_title', 'Unknown')}")
-            st.markdown(f"📍 **Location:** {row.get('primary_loc', 'N/A')}")
-            st.markdown(f"🗓️ **Date:** {row.get('start_date_date', 'N/A')}")
-            st.markdown(f"🏷️ **Tags:** {row.get('Topical Theme', '')}, {row.get('Effort Estimate', '')}, {row.get('Mood/Intent', '')}")
-            st.markdown(f"📝 {row.get('short_description', '')}")
-            st.markdown("---")
+for _, row in filtered.iterrows():
+    with st.container(border=True):
+        st.markdown(f"### {row['title_y'] if pd.notna(row['title_y']) else 'Untitled Event'}")
+        st.markdown(f"**Organization:** {row['org_title_y'] if pd.notna(row['org_title_y']) else 'Unknown'}")
+        st.markdown(f"📍 **Location:** {row['primary_loc_y'] if pd.notna(row['primary_loc_y']) else 'N/A'}")
+        st.markdown(f"🗓️ **Date:** {row['start_date_date_y'] if pd.notna(row['start_date_date_y']) else 'N/A'}")
+        st.markdown(f"🏷️ **Tags:** {row.get('Topical Theme', '')}, {row.get('Effort Estimate', '')}, {row.get('Mood/Intent', '')}")
+        st.markdown(f"📝 {row.get('short_description', '')}")
+        st.markdown("---")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
 
