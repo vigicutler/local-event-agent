@@ -1,11 +1,12 @@
+# 📦 Streamlit App: Advanced Search Logic with TF-IDF + Smart Filtering
+
 import streamlit as st
 import pandas as pd
-from fuzzywuzzy import process
 from fuzzywuzzy import fuzz
-
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 # === Load Data ===
-@st.cache_data
 @st.cache_data
 def load_data():
     enriched = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
@@ -18,7 +19,6 @@ def load_data():
     enriched["short_description"] = enriched["description"].str.slice(0, 140) + "..."
     raw["summary"] = raw["summary"].fillna("")
 
-    # ✅ Merge enriched tags with raw metadata
     merged = pd.merge(
         enriched,
         raw,
@@ -28,7 +28,7 @@ def load_data():
         suffixes=("", "_y")
     )
 
-    # ✨ Add: Mood Backfill Logic
+    # ✨ Mood backfill based on description keywords
     def infer_mood(description):
         desc = str(description).lower()
         if any(word in desc for word in ["meditate", "journal", "quiet", "contemplation", "healing"]):
@@ -45,70 +45,71 @@ def load_data():
         axis=1
     )
 
-    return merged
+    # 🔍 Prepare combined search blob
+    merged["search_blob"] = (
+        merged["title_y"].fillna("") + " " +
+        merged["description"].fillna("") + " " +
+        merged["Topical Theme"].fillna("") + " " +
+        merged["Activity Type"].fillna("")
+    ).str.lower()
 
+    return merged
 
 final_df = load_data()
 
-# === UI Header ===
+# === Build TF-IDF Matrix
+vectorizer = TfidfVectorizer(stop_words='english')
+tfidf_matrix = vectorizer.fit_transform(final_df["search_blob"])
+
+# === Search Function
+
+def get_top_matches(query, top_n=50):
+    query_vec = vectorizer.transform([query.lower()])
+    similarity_scores = cosine_similarity(query_vec, tfidf_matrix).flatten()
+    top_indices = similarity_scores.argsort()[-top_n:][::-1]
+    return final_df.iloc[top_indices].copy()
+
+# === UI ===
 st.set_page_config(page_title="Local Event Agent", layout="centered")
-st.title("🌱 NYC Community Event Agent")
+st.title("\U0001F331 NYC Community Event Agent")
 st.markdown("Choose how you'd like to help and find meaningful events near you.")
 
-# === Input Fields ===
-intent_input = st.text_input("🙋‍♀️ How can you help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
-mood_input = st.selectbox("💫 Optional — Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
-zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
+intent_input = st.text_input("\U0001F64B‍♀️ How can you help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
+mood_input = st.selectbox("\U0001F4AB Optional — Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
+zipcode_input = st.text_input("\U0001F4CD Optional — ZIP Code", placeholder="e.g. 10027")
 
-# === Action Button ===
 if st.button("Explore"):
-    input_clean = intent_input.strip().lower()
+    query = intent_input.strip()
+    if query:
+        filtered = get_top_matches(query)
 
-    # === Match 1: Fuzzy match Topical Theme & Activity Type
-    theme_matches = process.extract(input_clean, final_df["Topical Theme"].dropna().unique(), limit=5)
-    act_matches = process.extract(input_clean, final_df["Activity Type"].dropna().unique(), limit=5)
+        # === Mood filter
+        if mood_input != "(no preference)":
+            def mood_match(row):
+                mood_tag = str(row.get("Mood/Intent", "")).lower()
+                desc = str(row.get("description", "")).lower()
+                return (
+                    fuzz.partial_ratio(mood_tag, mood_input.lower()) > 60 or
+                    mood_input.lower() in desc
+                )
+            filtered = filtered[filtered.apply(mood_match, axis=1)]
 
-    matched_tags = set([match[0] for match in theme_matches + act_matches if match[1] >= 50])
+        # === ZIP filter
+        if zipcode_input.strip():
+            filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
 
-    df_tags = final_df[
-        final_df["Topical Theme"].isin(matched_tags) |
-        final_df["Activity Type"].isin(matched_tags)
-    ]
+        st.subheader(f"\U0001F50D Found {len(filtered)} matching events")
 
-    # === Match 2: Search keywords in description
-    df_desc = final_df[
-        final_df["description"].str.lower().str.contains(input_clean, na=False)
-    ]
-
-    # === Combine both methods
-    filtered = pd.concat([df_tags, df_desc]).drop_duplicates()
-
-    # === Apply mood filter
-    # === Apply mood filter
-    if mood_input != "(no preference)":
-        def mood_match(row):
-            mood_tag = str(row.get("Mood/Intent", "")).lower()
-            desc = str(row.get("description", "")).lower()
-            return (
-                fuzz.partial_ratio(mood_tag, mood_input.lower()) > 60 or
-                mood_input.lower() in desc
-            )
-
-        filtered = filtered[filtered.apply(mood_match, axis=1)]
-
-    # === Apply ZIP code filter
-    if zipcode_input.strip():
-        filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
-
-    # === Display Results
-    st.subheader(f"🔍 Found {len(filtered)} matching events")
-
-    for _, row in filtered.iterrows():
-        with st.container(border=True):
-            st.markdown(f"### {row.get('title_y', 'Untitled Event')}")
-            st.markdown(f"**Organization:** {row.get('org_title_y', 'Unknown')}")
-            st.markdown(f"📍 **Location:** {row.get('primary_loc_y', 'N/A')}")
-            st.markdown(f"🗓️ **Date:** {row.get('start_date_date_y', 'N/A')}")
-            st.markdown(f"🏷️ **Tags:** {row.get('Topical Theme', '')}, {row.get('Effort Estimate', '')}, {row.get('Mood/Intent', '')}")
-            st.markdown(f"📝 {row.get('short_description', '')}")
-            st.markdown("---")
+        for _, row in filtered.iterrows():
+            with st.container(border=True):
+                st.markdown(f"### {row.get('title_y', 'Untitled Event')}")
+                st.markdown(f"**Organization:** {row.get('org_title_y', 'Unknown')}")
+                st.markdown(f"\U0001F4CD **Location:** {row.get('primary_loc_y', 'N/A')}")
+                st.markdown(f"\U0001F4C5 **Date:** {row.get('start_date_date_y', 'N/A')}")
+                st.markdown(f"🏷️ **Tags:** {row.get('Topical Theme', '')}, {row.get('Effort Estimate', '')}, {row.get('Mood/Intent', '')}")
+                st.markdown(f"📝 {row.get('short_description', '')}")
+                st.markdown("---")
+    else:
+        st.warning("Please enter something you'd like to help with.")
+else:
+    st.info("Enter your interest and click **Explore** to find matching events.")
