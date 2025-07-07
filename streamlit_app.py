@@ -34,7 +34,6 @@ def load_data():
         suffixes=("", "_y")
     )
 
-
     # ✨ Mood backfill based on keywords
     def infer_mood(description):
         desc = str(description).lower()
@@ -63,8 +62,6 @@ def load_data():
 
 final_df = load_data()
 
-# Debugging helper (optional)
-st.write("📊 Columns available:", final_df.columns.tolist())
 # === TF-IDF Setup ===
 vectorizer = TfidfVectorizer(stop_words='english')
 tfidf_matrix = vectorizer.fit_transform(final_df["search_blob"])
@@ -93,7 +90,8 @@ st.markdown("Choose how you'd like to help and find meaningful events near you."
 intent_input = st.text_input("🙋‍♀️ How can you help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
 mood_input = st.selectbox("💫 Optional — Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
 zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
-weather_filter = st.selectbox("☀️ Optional — Weather Suitability", ["(show all)", "☀️ Great for sunny days", "🌧️ Perfect for rainy afternoons", "🌈 Flexible"])
+
+# ✅ TEMP: Weather filter removed until data is ready
 
 if st.button("Explore"):
     query = intent_input.strip()
@@ -115,10 +113,6 @@ if st.button("Explore"):
         if zipcode_input.strip():
             filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
 
-        # Filter: Weather
-        if weather_filter != "(show all)":
-            filtered = filtered[filtered["Weather Badge"].fillna("").str.contains(weather_filter.split()[0], case=False)]
-
         filtered = filtered.sort_values(by="relevance", ascending=False)
 
         st.subheader(f"🔍 Found {len(filtered)} matching events")
@@ -132,7 +126,7 @@ if st.button("Explore"):
                 st.markdown(f"**Organization:** {row.get('org_title_y', 'Unknown')}")
                 st.markdown(f"📍 **Location:** {row.get('primary_loc_y', 'N/A')}")
                 st.markdown(f"📅 **Date:** {row.get('start_date_date_y', 'N/A')}")
-                tags = [row.get('Topical Theme', ''), row.get('Effort Estimate', ''), row.get('Mood/Intent', ''), row.get('Weather Badge', '')]
+                tags = [row.get('Topical Theme', ''), row.get('Effort Estimate', ''), row.get('Mood/Intent', '')]
                 tag_str = " ".join([f"`{t.strip()}`" for t in tags if t])
                 st.markdown(f"🏷️ {tag_str}")
                 st.markdown(f"📝 {row.get('short_description', '')}")
