@@ -123,3 +123,4 @@ if st.button("Explore"):
         st.warning("Please enter something you'd like to help with.")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
+
