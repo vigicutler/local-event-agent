@@ -1,12 +1,9 @@
-# 📦 Streamlit App: Updated with Metadata Merge + Card UI (Fixed Columns)
-
 import streamlit as st
 import pandas as pd
 from fuzzywuzzy import process
 
 # === Load Data ===
 @st.cache_data
-
 def load_data():
     enriched = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
     raw = pd.read_csv("NYC_Service__Volunteer_Opportunities__Historical__20250626.csv")
@@ -18,6 +15,7 @@ def load_data():
     enriched["short_description"] = enriched["description"].str.slice(0, 140) + "..."
     raw["summary"] = raw["summary"].fillna("")
 
+    # ✅ Merge enriched tags with raw metadata using 'description' ↔ 'summary'
     merged = pd.merge(
         enriched,
         raw,
@@ -29,6 +27,9 @@ def load_data():
     return merged
 
 final_df = load_data()
+
+# ✅ Debug: show final columns
+# st.write("📊 Final columns:", final_df.columns.tolist())
 
 # === UI Header ===
 st.set_page_config(page_title="Local Event Agent", layout="centered")
@@ -44,13 +45,10 @@ zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10
 if st.button("Explore"):
     input_clean = intent_input.strip().lower()
 
-    # === Fuzzy Match Logic ===
+    # === Fuzzy Matching Logic ===
     theme_matches = process.extract(input_clean, final_df["Topical Theme"].dropna().unique(), limit=5)
     act_matches = process.extract(input_clean, final_df["Activity Type"].dropna().unique(), limit=5)
-
-    all_matches = set([
-        match[0] for match in theme_matches + act_matches if match[1] >= 50
-    ])
+    all_matches = set([match[0] for match in theme_matches + act_matches if match[1] >= 50])
 
     if all_matches:
         filtered = final_df[
@@ -62,21 +60,26 @@ if st.button("Explore"):
             final_df["Activity Type"].str.contains(input_clean, case=False, na=False)
         ]
 
+    # === Apply mood filter
     if mood_input != "(no preference)":
         filtered = filtered[filtered["Mood/Intent"].str.contains(mood_input, case=False, na=False)]
 
+    # === Apply ZIP filter
     if zipcode_input.strip() != "":
         filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
 
     st.subheader(f"🔍 Found {len(filtered)} matching events")
 
-for _, row in filtered.iterrows():
-    with st.container(border=True):
-        st.markdown(f"### {row.get('title') or row.get('title_x') or row.get('title_y') or 'Untitled Event'}")
-        st.markdown(f"**Organization:** {row.get('org_title', 'Unknown')}")
-        st.markdown(f"📍 **Location:** {row.get('primary_loc', 'N/A')}")
-        st.markdown(f"🗓️ **Date:** {row.get('start_date_date', 'N/A')}")
-        st.markdown(f"🏷️ **Tags:** {row.get('Topical Theme', '')}, {row.get('Effort Estimate', '')}, {row.get('Mood/Intent', '')}")
-        st.markdown(f"📝 {row.get('short_description', '')}")
-        st.markdown("---")
+    # === Render cards
+    for _, row in filtered.iterrows():
+        with st.container(border=True):
+            st.markdown(f"### {row.get('title', 'Untitled Event')}")
+            st.markdown(f"**Organization:** {row.get('org_title', 'Unknown')}")
+            st.markdown(f"📍 **Location:** {row.get('primary_loc', 'N/A')}")
+            st.markdown(f"🗓️ **Date:** {row.get('start_date_date', 'N/A')}")
+            st.markdown(f"🏷️ **Tags:** {row.get('Topical Theme', '')}, {row.get('Effort Estimate', '')}, {row.get('Mood/Intent', '')}")
+            st.markdown(f"📝 {row.get('short_description', '')}")
+            st.markdown("---")
+else:
+    st.info("Enter your interest and click **Explore** to find matching events.")
 
