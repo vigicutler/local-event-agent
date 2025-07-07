@@ -41,22 +41,26 @@ zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10
 
 # === Action Button ===
 if st.button("Explore"):
-    input_clean = intent_input.strip().lower()
-
-    # === Fuzzy match
-    theme_matches = process.extract(input_clean, final_df["Topical Theme"].dropna().unique(), limit=5)
-    act_matches = process.extract(input_clean, final_df["Activity Type"].dropna().unique(), limit=5)
-    all_matches = set([match[0] for match in theme_matches + act_matches if match[1] >= 50])
-
-    if all_matches:
-        filtered = final_df[
+        input_clean = intent_input.strip().lower()
+        
+        # === Fuzzy match on Themes/Activities
+        theme_matches = process.extract(input_clean, final_df["Topical Theme"].dropna().unique(), limit=5)
+        act_matches = process.extract(input_clean, final_df["Activity Type"].dropna().unique(), limit=5)
+        all_matches = set([match[0] for match in theme_matches + act_matches if match[1] >= 50])
+        
+        # 🎯 Match 1: Topical Theme / Activity Type
+        df_tags = final_df[
             final_df["Topical Theme"].isin(all_matches) | final_df["Activity Type"].isin(all_matches)
         ]
-    else:
-        filtered = final_df[
-            final_df["Topical Theme"].str.contains(input_clean, case=False, na=False) |
-            final_df["Activity Type"].str.contains(input_clean, case=False, na=False)
+        
+        # 🔍 Match 2: Search keywords in description
+        df_desc = final_df[
+            final_df["description"].str.lower().str.contains(input_clean, na=False)
         ]
+        
+        # 🧪 Combine both methods
+        filtered = pd.concat([df_tags, df_desc]).drop_duplicates()
+
 
     if mood_input != "(no preference)":
         filtered = filtered[filtered["Mood/Intent"].str.contains(mood_input, case=False, na=False)]
