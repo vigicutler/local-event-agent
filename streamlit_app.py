@@ -1,4 +1,4 @@
-# 📦 Streamlit App: Updated with Metadata Merge + Card UI
+# 📦 Streamlit App: Updated with Metadata Merge + Card UI (Fixed Columns)
 
 import streamlit as st
 import pandas as pd
@@ -60,7 +60,7 @@ if st.button("Explore"):
 
     # Apply ZIP code filter if provided
     if zipcode_input.strip() != "":
-        filtered = filtered[filtered["postalcode"].astype(str).str.startswith(zipcode_input.strip())]
+        filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
 
     st.subheader(f"🔍 Found {len(filtered)} matching events")
 
@@ -68,9 +68,9 @@ if st.button("Explore"):
     for _, row in filtered.iterrows():
         with st.container(border=True):
             st.markdown(f"### {row.get('title', 'Untitled Event')}")
-            st.markdown(f"**Organization:** {row.get('orgname', 'Unknown')}")
-            st.markdown(f"📍 **Location:** {row.get('servicelocation', 'N/A')}")
-            st.markdown(f"📅 **Date:** {row.get('startdate', 'N/A')}  \n🕒 **Time:** {row.get('starttime', '')}")
+            st.markdown(f"**Organization:** {row.get('org_title', 'Unknown')}")
+            st.markdown(f"📍 **Location:** {row.get('primary_loc', 'N/A')}")
+            st.markdown(f"🗓️ **Date:** {row.get('start_date_date', 'N/A')}  \n🕒 **Time:** {row.get('event_time', '')}")
             st.markdown(f"🏷️ **Tags:** {row.get('Topical Theme', '')}, {row.get('Effort Estimate', '')}, {row.get('Mood/Intent', '')}")
             st.markdown(f"📝 {row.get('short_description', '')}")
             st.markdown("---")
