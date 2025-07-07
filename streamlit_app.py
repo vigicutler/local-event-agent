@@ -33,6 +33,8 @@ def load_data():
         how="left",
         suffixes=("", "_y")
     )
+# Debugging helper (optional)
+st.write("📊 Columns available:", final_df.columns.tolist())
 
     # ✨ Mood backfill based on keywords
     def infer_mood(description):
