@@ -7,7 +7,7 @@ import pandas as pd
 @st.cache_data
 
 def load_data():
-    df = pd.read_csv("Merged_Enriched_Events.csv")
+    df = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
     df["description"] = df["description"].fillna("")
     df["Mood/Intent"] = df["Mood/Intent"].fillna("")
     df["Topical Theme"] = df["Topical Theme"].fillna("")
