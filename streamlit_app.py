@@ -60,7 +60,10 @@ if st.button("Explore"):
 
     # Apply ZIP code filter if provided
     if zipcode_input.strip() != "":
-        filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
+        if "Postcode" in filtered.columns:
+            filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
+        else:
+            st.warning("⚠️ ZIP/postal code column 'Postcode' not found in dataset.")
 
     st.subheader(f"🔍 Found {len(filtered)} matching events")
 
@@ -70,7 +73,7 @@ if st.button("Explore"):
             st.markdown(f"### {row.get('title', 'Untitled Event')}")
             st.markdown(f"**Organization:** {row.get('org_title', 'Unknown')}")
             st.markdown(f"📍 **Location:** {row.get('primary_loc', 'N/A')}")
-            st.markdown(f"🗓️ **Date:** {row.get('start_date_date', 'N/A')}  \n🕒 **Time:** {row.get('event_time', '')}")
+            st.markdown(f"🗓️ **Date:** {row.get('start_date_date', 'N/A')}")
             st.markdown(f"🏷️ **Tags:** {row.get('Topical Theme', '')}, {row.get('Effort Estimate', '')}, {row.get('Mood/Intent', '')}")
             st.markdown(f"📝 {row.get('short_description', '')}")
             st.markdown("---")
