@@ -84,7 +84,7 @@ if st.button("Explore"):
     filtered = pd.concat([df_tags, df_desc]).drop_duplicates()
 
     # === Apply mood filter
-    if mood_input != "(no preference)":
+if mood_input != "(no preference)":
     def mood_match(row):
         mood_tag = str(row.get("Mood/Intent", "")).lower()
         desc = str(row.get("description", "")).lower()
@@ -97,13 +97,13 @@ if st.button("Explore"):
 
 
     # === Apply ZIP code filter
-    if zipcode_input.strip():
+if zipcode_input.strip():
         filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
 
     # === Display Results
     st.subheader(f"🔍 Found {len(filtered)} matching events")
 
-    for _, row in filtered.iterrows():
+for _, row in filtered.iterrows():
         with st.container(border=True):
             st.markdown(f"### {row.get('title_y', 'Untitled Event')}")
             st.markdown(f"**Organization:** {row.get('org_title_y', 'Unknown')}")
