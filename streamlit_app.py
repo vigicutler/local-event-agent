@@ -56,14 +56,22 @@ if st.button("🔍 Explore"):
     if zipcode:
         filtered = filtered[filtered["Postcode"].str.startswith(zipcode.strip())]
 
-    # Display result count
-    st.subheader(f"📋 {len(filtered)} matching events:")
+   # Display result count
+st.subheader(f"📋 {len(filtered)} matching events:")
 
-    # Show select columns
-    st.dataframe(
-        filtered[["short_description", "Topical Theme", "Effort Estimate", "Weather Badge"]].reset_index(drop=True),
-        use_container_width=True
-    )
+# Only show results if we have matches and columns exist
+if not filtered.empty:
+    columns_to_show = ["short_description", "Topical Theme", "Effort Estimate", "Weather Badge"]
+    columns_available = [col for col in columns_to_show if col in filtered.columns]
 
+    if columns_available:
+        st.dataframe(
+            filtered[columns_available].reset_index(drop=True),
+            use_container_width=True
+        )
+    else:
+        st.warning("Matching events found, but required columns are missing.")
+else:
+    st.info("🤷 No matching events found. Try a different search or check your ZIP.")
 
 
