@@ -84,26 +84,26 @@ if st.button("Explore"):
     filtered = pd.concat([df_tags, df_desc]).drop_duplicates()
 
     # === Apply mood filter
-if mood_input != "(no preference)":
-    def mood_match(row):
-        mood_tag = str(row.get("Mood/Intent", "")).lower()
-        desc = str(row.get("description", "")).lower()
-        return (
-            fuzz.partial_ratio(mood_tag, mood_input.lower()) > 60 or
-            mood_input.lower() in desc
-        )
+    # === Apply mood filter
+    if mood_input != "(no preference)":
+        def mood_match(row):
+            mood_tag = str(row.get("Mood/Intent", "")).lower()
+            desc = str(row.get("description", "")).lower()
+            return (
+                fuzz.partial_ratio(mood_tag, mood_input.lower()) > 60 or
+                mood_input.lower() in desc
+            )
 
-    filtered = filtered[filtered.apply(mood_match, axis=1)]
-
+        filtered = filtered[filtered.apply(mood_match, axis=1)]
 
     # === Apply ZIP code filter
-if zipcode_input.strip():
+    if zipcode_input.strip():
         filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
 
     # === Display Results
-st.subheader(f"🔍 Found {len(filtered)} matching events")
+    st.subheader(f"🔍 Found {len(filtered)} matching events")
 
-for _, row in filtered.iterrows():
+    for _, row in filtered.iterrows():
         with st.container(border=True):
             st.markdown(f"### {row.get('title_y', 'Untitled Event')}")
             st.markdown(f"**Organization:** {row.get('org_title_y', 'Unknown')}")
@@ -112,6 +112,3 @@ for _, row in filtered.iterrows():
             st.markdown(f"🏷️ **Tags:** {row.get('Topical Theme', '')}, {row.get('Effort Estimate', '')}, {row.get('Mood/Intent', '')}")
             st.markdown(f"📝 {row.get('short_description', '')}")
             st.markdown("---")
-
-else:
-    st.info("Enter your interest and click **Explore** to find matching events.")
