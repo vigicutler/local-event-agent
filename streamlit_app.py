@@ -1,73 +1,69 @@
-# 📦 Streamlit App: Community Event Recommender (Updated Version)
+# 📦 Streamlit App: Clean Version Aligned with Capstone Vision
+
 import streamlit as st
 import pandas as pd
-from fuzzywuzzy import fuzz
+from fuzzywuzzy import process
 
 # === Load Data ===
 @st.cache_data
+
 def load_data():
     df = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
     df["description"] = df["description"].fillna("")
     df["Mood/Intent"] = df["Mood/Intent"].fillna("")
     df["Topical Theme"] = df["Topical Theme"].fillna("")
     df["Activity Type"] = df["Activity Type"].fillna("")
+    df["Postcode"] = df["Postcode"].fillna("").astype(str)
     df["short_description"] = df["description"].str.slice(0, 120) + "..."
     return df
 
-df = load_data()
-
-# === Custom CSS for Key Biscayne Aesthetic ===
-st.markdown("""
-<style>
-body {
-    background-color: #f0f9f8;
-}
-h1 {
-    color: #2b6777;
-}
-button[kind="primary"] {
-    background-color: #52ab98 !important;
-    color: white !important;
-}
-div[data-testid="stSelectbox"] label {
-    color: #2b6777;
-}
-</style>
-""", unsafe_allow_html=True)
+final_df = load_data()
 
 # === UI Header ===
-st.title("🌿 NYC Community Event Recommender")
-st.markdown("Discover local ways to contribute. Start with how you want to help and filter by intent, mood, or location.")
+st.title("🔎 NYC Community Event Recommender")
+st.markdown("Find events based on how you want to help — choose your impact and discover local opportunities.")
 
-# === User Inputs ===
-intent_input = st.text_input("🙋‍♀️ How can I help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
-zipcode_input = st.text_input("📍 Enter your ZIP code (optional)", placeholder="e.g. 10027")
+# === Input Fields ===
+intent_input = st.text_input("🙋‍♀️ How can you help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
+intent_input = intent_input.strip().lower()
 
-# Mood becomes an optional filter
-mood_options = ["Uplift", "Unwind", "Connect", "Empower", "Reflect"]
-mood_input = st.selectbox("💫 Optional: Set an intent", ["(no preference)"] + mood_options)
+mood = st.selectbox("💫 Optional - Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
+zipcode = st.text_input("📍 Optional ZIP Code Filter", placeholder="e.g. 10027")
 
-# === Filter + Display ===
+# === Search Button ===
 if st.button("🔍 Explore"):
-    filtered = df.copy()
+    input_clean = intent_input.lower()
 
-    # Apply fuzzy match if intent provided
-    if intent_input.strip():
-        input_clean = intent_input.lower().strip()
+    # Fuzzy match against Topical Theme and Activity Type
+    topical_matches = process.extract(input_clean, final_df["Topical Theme"].unique(), limit=10)
+    activity_matches = process.extract(input_clean, final_df["Activity Type"].unique(), limit=10)
+
+    matched_themes = [match[0] for match in topical_matches if match[1] > 60]
+    matched_activities = [match[0] for match in activity_matches if match[1] > 60]
+
+    filtered = final_df[
+        final_df["Topical Theme"].isin(matched_themes) |
+        final_df["Activity Type"].isin(matched_activities)
+    ]
+
+    # Apply optional mood filter
+    if mood != "(no preference)":
         filtered = filtered[
-            filtered["Topical Theme"].str.lower().apply(lambda x: fuzz.partial_ratio(x, input_clean)) > 60 |
-            filtered["Activity Type"].str.lower().apply(lambda x: fuzz.partial_ratio(x, input_clean)) > 60
+            filtered["Mood/Intent"].str.contains(mood, case=False)
         ]
 
-    # Apply mood filter
-    if mood_input != "(no preference)":
-        filtered = filtered[filtered["Mood/Intent"].str.contains(mood_input, case=False, na=False)]
+    # Apply ZIP filter if provided
+    if zipcode:
+        filtered = filtered[filtered["Postcode"].str.startswith(zipcode.strip())]
 
-    # Final display
-    st.subheader(f"📋 {len(filtered)} events match your search")
+    # Display result count
+    st.subheader(f"📋 {len(filtered)} matching events:")
+
+    # Show select columns
     st.dataframe(
         filtered[["short_description", "Topical Theme", "Effort Estimate", "Weather Badge"]].reset_index(drop=True),
         use_container_width=True
     )
+
 
 
