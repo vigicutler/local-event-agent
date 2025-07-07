@@ -28,7 +28,11 @@ def load_data():
 
 final_df = load_data()
 
+
 # ✅ Debug: show final columns
+# === Debug: Show column names after merge ===
+st.write("🧪 Columns in final_df:", final_df.columns.tolist())
+
 # st.write("📊 Final columns:", final_df.columns.tolist())
 
 # === UI Header ===
@@ -82,4 +86,5 @@ if st.button("Explore"):
             st.markdown("---")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
+
 
