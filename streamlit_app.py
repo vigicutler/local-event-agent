@@ -1,52 +1,72 @@
-# 📦 Streamlit App: Clean Version Aligned with Capstone Vision
-
+# 📦 Streamlit App: Community Event Recommender (Updated Version)
 import streamlit as st
 import pandas as pd
+from fuzzywuzzy import fuzz
 
 # === Load Data ===
 @st.cache_data
-
 def load_data():
     df = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
     df["description"] = df["description"].fillna("")
     df["Mood/Intent"] = df["Mood/Intent"].fillna("")
     df["Topical Theme"] = df["Topical Theme"].fillna("")
+    df["Activity Type"] = df["Activity Type"].fillna("")
     df["short_description"] = df["description"].str.slice(0, 120) + "..."
     return df
 
-final_df = load_data()
+df = load_data()
+
+# === Custom CSS for Key Biscayne Aesthetic ===
+st.markdown("""
+<style>
+body {
+    background-color: #f0f9f8;
+}
+h1 {
+    color: #2b6777;
+}
+button[kind="primary"] {
+    background-color: #52ab98 !important;
+    color: white !important;
+}
+div[data-testid="stSelectbox"] label {
+    color: #2b6777;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # === UI Header ===
-st.title("🔎 NYC Community Event Recommender")
-st.markdown("Find events based on how you want to help — choose your impact and discover local opportunities.")
+st.title("🌿 NYC Community Event Recommender")
+st.markdown("Discover local ways to contribute. Start with how you want to help and filter by intent, mood, or location.")
 
-# === Intent + Mood Filters ===
-intent_options = ["Educate", "Clean", "Green", "Support", "Create"]
+# === User Inputs ===
+intent_input = st.text_input("🙋‍♀️ How can I help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
+zipcode_input = st.text_input("📍 Enter your ZIP code (optional)", placeholder="e.g. 10027")
+
+# Mood becomes an optional filter
 mood_options = ["Uplift", "Unwind", "Connect", "Empower", "Reflect"]
+mood_input = st.selectbox("💫 Optional: Set an intent", ["(no preference)"] + mood_options)
 
-intent = st.selectbox("🙋‍♀️ How can you help?", intent_options)
-mood = st.selectbox("💫 Optional: How do you want to feel?", ["(no preference)"] + mood_options)
+# === Filter + Display ===
+if st.button("🔍 Explore"):
+    filtered = df.copy()
 
-# === Search Button ===
-if st.button("🔍 Show Matching Events"):
-    # Filter by intent → match to Topical Theme or Activity Type
-    df_filtered = final_df[
-        final_df["Topical Theme"].str.contains(intent, case=False) |
-        final_df["Activity Type"].str.contains(intent, case=False)
-    ]
-
-    # Apply optional mood filter
-    if mood != "(no preference)":
-        df_filtered = df_filtered[
-            df_filtered["Mood/Intent"].str.contains(mood, case=False)
+    # Apply fuzzy match if intent provided
+    if intent_input.strip():
+        input_clean = intent_input.lower().strip()
+        filtered = filtered[
+            filtered["Topical Theme"].str.lower().apply(lambda x: fuzz.partial_ratio(x, input_clean)) > 60 |
+            filtered["Activity Type"].str.lower().apply(lambda x: fuzz.partial_ratio(x, input_clean)) > 60
         ]
 
-    # Display result count
-    st.subheader(f"📋 {len(df_filtered)} matching events:")
+    # Apply mood filter
+    if mood_input != "(no preference)":
+        filtered = filtered[filtered["Mood/Intent"].str.contains(mood_input, case=False, na=False)]
 
-    # Show select columns
+    # Final display
+    st.subheader(f"📋 {len(filtered)} events match your search")
     st.dataframe(
-        df_filtered[["short_description", "Topical Theme", "Effort Estimate", "Weather Badge"]].reset_index(drop=True),
+        filtered[["short_description", "Topical Theme", "Effort Estimate", "Weather Badge"]].reset_index(drop=True),
         use_container_width=True
     )
 
