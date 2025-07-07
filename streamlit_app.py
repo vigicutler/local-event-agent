@@ -101,7 +101,7 @@ if zipcode_input.strip():
         filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
 
     # === Display Results
-    st.subheader(f"🔍 Found {len(filtered)} matching events")
+st.subheader(f"🔍 Found {len(filtered)} matching events")
 
 for _, row in filtered.iterrows():
         with st.container(border=True):
