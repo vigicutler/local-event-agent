@@ -15,24 +15,19 @@ def load_data():
     enriched["short_description"] = enriched["description"].str.slice(0, 140) + "..."
     raw["summary"] = raw["summary"].fillna("")
 
-    # ✅ Merge enriched tags with raw metadata using 'description' ↔ 'summary'
-  merged = pd.merge(
-    enriched,
-    raw,
-    left_on="description",
-    right_on="summary",
-    how="left",
-    suffixes=("", "_raw")
-)
-
+    # ✅ Merge enriched tags with raw metadata
+    merged = pd.merge(
+        enriched,
+        raw,
+        left_on="description",
+        right_on="summary",
+        how="left",
+        suffixes=("", "_y")
+    )
 
     return merged
 
 final_df = load_data()
-
-
-
-# st.write("📊 Final columns:", final_df.columns.tolist())
 
 # === UI Header ===
 st.set_page_config(page_title="Local Event Agent", layout="centered")
@@ -48,7 +43,7 @@ zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10
 if st.button("Explore"):
     input_clean = intent_input.strip().lower()
 
-    # === Fuzzy Matching Logic ===
+    # === Fuzzy match
     theme_matches = process.extract(input_clean, final_df["Topical Theme"].dropna().unique(), limit=5)
     act_matches = process.extract(input_clean, final_df["Activity Type"].dropna().unique(), limit=5)
     all_matches = set([match[0] for match in theme_matches + act_matches if match[1] >= 50])
@@ -63,27 +58,25 @@ if st.button("Explore"):
             final_df["Activity Type"].str.contains(input_clean, case=False, na=False)
         ]
 
-    # === Apply mood filter
     if mood_input != "(no preference)":
         filtered = filtered[filtered["Mood/Intent"].str.contains(mood_input, case=False, na=False)]
 
-    # === Apply ZIP filter
     if zipcode_input.strip() != "":
         filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
 
     st.subheader(f"🔍 Found {len(filtered)} matching events")
 
-    # === Render cards
-for _, row in filtered.iterrows():
-    with st.container(border=True):
-        st.markdown(f"### {row['title_y'] if pd.notna(row['title_y']) else 'Untitled Event'}")
-        st.markdown(f"**Organization:** {row['org_title_y'] if pd.notna(row['org_title_y']) else 'Unknown'}")
-        st.markdown(f"📍 **Location:** {row['primary_loc_y'] if pd.notna(row['primary_loc_y']) else 'N/A'}")
-        st.markdown(f"🗓️ **Date:** {row['start_date_date_y'] if pd.notna(row['start_date_date_y']) else 'N/A'}")
-        st.markdown(f"🏷️ **Tags:** {row.get('Topical Theme', '')}, {row.get('Effort Estimate', '')}, {row.get('Mood/Intent', '')}")
-        st.markdown(f"📝 {row.get('short_description', '')}")
-        st.markdown("---")
+    for _, row in filtered.iterrows():
+        with st.container(border=True):
+            st.markdown(f"### {row['title_y'] if pd.notna(row['title_y']) else 'Untitled Event'}")
+            st.markdown(f"**Organization:** {row['org_title_y'] if pd.notna(row['org_title_y']) else 'Unknown'}")
+            st.markdown(f"📍 **Location:** {row['primary_loc_y'] if pd.notna(row['primary_loc_y']) else 'N/A'}")
+            st.markdown(f"🗓️ **Date:** {row['start_date_date_y'] if pd.notna(row['start_date_date_y']) else 'N/A'}")
+            st.markdown(f"🏷️ **Tags:** {row.get('Topical Theme', '')}, {row.get('Effort Estimate', '')}, {row.get('Mood/Intent', '')}")
+            st.markdown(f"📝 {row.get('short_description', '')}")
+            st.markdown("---")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
+
 
 
