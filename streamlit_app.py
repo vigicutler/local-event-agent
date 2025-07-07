@@ -36,38 +36,43 @@ st.title("🌱 NYC Community Event Agent")
 st.markdown("Choose how you'd like to help and find meaningful events near you.")
 
 # === Input Fields ===
-intent_input = st.text_input("🙋‍♀️ How can you help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
+intent_input = st.text_input("🙋‍♀️ How can I help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
 mood_input = st.selectbox("💫 Optional — Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
 zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
 
-# === Action Button ===
 if st.button("Explore"):
     input_clean = intent_input.strip().lower()
 
-    # Fuzzy match using Topical Theme and Activity Type
-    top_matches = process.extract(input_clean, final_df["Topical Theme"].dropna().unique(), limit=3)
-    act_matches = process.extract(input_clean, final_df["Activity Type"].dropna().unique(), limit=3)
+    # === Fuzzy Match Logic ===
+    theme_matches = process.extract(input_clean, final_df["Topical Theme"].dropna().unique(), limit=5)
+    act_matches = process.extract(input_clean, final_df["Activity Type"].dropna().unique(), limit=5)
 
-    all_matches = set([match[0] for match in top_matches + act_matches if match[1] > 60])
+    all_matches = set([
+        match[0] for match in theme_matches + act_matches if match[1] >= 50
+    ])
 
-    filtered = final_df[
-        final_df["Topical Theme"].isin(all_matches) | final_df["Activity Type"].isin(all_matches)
-    ]
+    if all_matches:
+        filtered = final_df[
+            final_df["Topical Theme"].isin(all_matches) | final_df["Activity Type"].isin(all_matches)
+        ]
+    else:
+        # Fallback to basic substring match if fuzzy matches too weak
+        filtered = final_df[
+            final_df["Topical Theme"].str.contains(input_clean, case=False, na=False) |
+            final_df["Activity Type"].str.contains(input_clean, case=False, na=False)
+        ]
 
-    # Apply mood filter
+    # === Optional Mood Filter ===
     if mood_input != "(no preference)":
         filtered = filtered[filtered["Mood/Intent"].str.contains(mood_input, case=False, na=False)]
 
-    # Apply ZIP code filter if provided
+    # === Optional ZIP Code Filter ===
     if zipcode_input.strip() != "":
-        if "Postcode" in filtered.columns:
-            filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
-        else:
-            st.warning("⚠️ ZIP/postal code column 'Postcode' not found in dataset.")
+        filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
 
+    # === Display Result Count + Cards ===
     st.subheader(f"🔍 Found {len(filtered)} matching events")
 
-    # Display Event Cards
     for _, row in filtered.iterrows():
         with st.container(border=True):
             st.markdown(f"### {row.get('title', 'Untitled Event')}")
