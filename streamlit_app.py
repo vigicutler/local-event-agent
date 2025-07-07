@@ -33,8 +33,7 @@ def load_data():
         how="left",
         suffixes=("", "_y")
     )
-# Debugging helper (optional)
-st.write("📊 Columns available:", final_df.columns.tolist())
+
 
     # ✨ Mood backfill based on keywords
     def infer_mood(description):
@@ -64,6 +63,8 @@ st.write("📊 Columns available:", final_df.columns.tolist())
 
 final_df = load_data()
 
+# Debugging helper (optional)
+st.write("📊 Columns available:", final_df.columns.tolist())
 # === TF-IDF Setup ===
 vectorizer = TfidfVectorizer(stop_words='english')
 tfidf_matrix = vectorizer.fit_transform(final_df["search_blob"])
