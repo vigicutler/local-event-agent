@@ -1,8 +1,11 @@
 import streamlit as st
 import pandas as pd
 from fuzzywuzzy import process
+from fuzzywuzzy import fuzz
+
 
 # === Load Data ===
+@st.cache_data
 @st.cache_data
 def load_data():
     enriched = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
@@ -25,7 +28,25 @@ def load_data():
         suffixes=("", "_y")
     )
 
+    # ✨ Add: Mood Backfill Logic
+    def infer_mood(description):
+        desc = str(description).lower()
+        if any(word in desc for word in ["meditate", "journal", "quiet", "contemplation", "healing"]):
+            return "Reflect"
+        if any(word in desc for word in ["party", "social", "connect", "meet", "talk"]):
+            return "Connect"
+        if any(word in desc for word in ["support", "uplift", "inspire", "empower"]):
+            return "Uplift"
+        return ""
+
+    merged["Mood/Intent"] = merged.apply(
+        lambda row: row["Mood/Intent"] if pd.notna(row["Mood/Intent"]) and row["Mood/Intent"].strip() != ""
+        else infer_mood(row["description"]),
+        axis=1
+    )
+
     return merged
+
 
 final_df = load_data()
 
@@ -64,7 +85,16 @@ if st.button("Explore"):
 
     # === Apply mood filter
     if mood_input != "(no preference)":
-        filtered = filtered[filtered["Mood/Intent"].str.contains(mood_input, case=False, na=False)]
+    def mood_match(row):
+        mood_tag = str(row.get("Mood/Intent", "")).lower()
+        desc = str(row.get("description", "")).lower()
+        return (
+            fuzz.partial_ratio(mood_tag, mood_input.lower()) > 60 or
+            mood_input.lower() in desc
+        )
+
+    filtered = filtered[filtered.apply(mood_match, axis=1)]
+
 
     # === Apply ZIP code filter
     if zipcode_input.strip():
