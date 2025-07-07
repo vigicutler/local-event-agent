@@ -1,4 +1,4 @@
-# 📦 Streamlit App: Clean Version Aligned with Capstone Vision
+# 📦 Streamlit App: Updated with Metadata Merge + Card UI
 
 import streamlit as st
 import pandas as pd
@@ -8,70 +8,69 @@ from fuzzywuzzy import process
 @st.cache_data
 
 def load_data():
-    df = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
-    df["description"] = df["description"].fillna("")
-    df["Mood/Intent"] = df["Mood/Intent"].fillna("")
-    df["Topical Theme"] = df["Topical Theme"].fillna("")
-    df["Activity Type"] = df["Activity Type"].fillna("")
-    df["Postcode"] = df["Postcode"].fillna("").astype(str)
-    df["short_description"] = df["description"].str.slice(0, 120) + "..."
-    return df
+    enriched = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
+    raw = pd.read_csv("NYC_Service__Volunteer_Opportunities__Historical__20250626.csv")
+
+    enriched.columns = enriched.columns.str.strip()
+    raw.columns = raw.columns.str.strip()
+
+    enriched["description"] = enriched["description"].fillna("")
+    enriched["short_description"] = enriched["description"].str.slice(0, 140) + "..."
+    raw["summary"] = raw["summary"].fillna("")
+
+    merged = pd.merge(
+        enriched,
+        raw,
+        left_on="description",
+        right_on="summary",
+        how="left"
+    )
+
+    return merged
 
 final_df = load_data()
 
 # === UI Header ===
-st.title("🔎 NYC Community Event Recommender")
-st.markdown("Find events based on how you want to help — choose your impact and discover local opportunities.")
+st.set_page_config(page_title="Local Event Agent", layout="centered")
+st.title("🌱 NYC Community Event Agent")
+st.markdown("Choose how you'd like to help and find meaningful events near you.")
 
 # === Input Fields ===
 intent_input = st.text_input("🙋‍♀️ How can you help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
-intent_input = intent_input.strip().lower()
+mood_input = st.selectbox("💫 Optional — Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
+zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
 
-mood = st.selectbox("💫 Optional - Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
-zipcode = st.text_input("📍 Optional ZIP Code Filter", placeholder="e.g. 10027")
+# === Action Button ===
+if st.button("Explore"):
+    input_clean = intent_input.strip().lower()
 
-# === Search Button ===
-if st.button("🔍 Explore"):
-    input_clean = intent_input.lower()
+    # Fuzzy match using Topical Theme and Activity Type
+    top_matches = process.extract(input_clean, final_df["Topical Theme"].dropna().unique(), limit=3)
+    act_matches = process.extract(input_clean, final_df["Activity Type"].dropna().unique(), limit=3)
 
-    # Fuzzy match against Topical Theme and Activity Type
-    topical_matches = process.extract(input_clean, final_df["Topical Theme"].unique(), limit=10)
-    activity_matches = process.extract(input_clean, final_df["Activity Type"].unique(), limit=10)
-
-    matched_themes = [match[0] for match in topical_matches if match[1] > 60]
-    matched_activities = [match[0] for match in activity_matches if match[1] > 60]
+    all_matches = set([match[0] for match in top_matches + act_matches if match[1] > 60])
 
     filtered = final_df[
-        final_df["Topical Theme"].isin(matched_themes) |
-        final_df["Activity Type"].isin(matched_activities)
+        final_df["Topical Theme"].isin(all_matches) | final_df["Activity Type"].isin(all_matches)
     ]
 
-    # Apply optional mood filter
-    if mood != "(no preference)":
-        filtered = filtered[
-            filtered["Mood/Intent"].str.contains(mood, case=False)
-        ]
+    # Apply mood filter
+    if mood_input != "(no preference)":
+        filtered = filtered[filtered["Mood/Intent"].str.contains(mood_input, case=False, na=False)]
 
-    # Apply ZIP filter if provided
-    if zipcode:
-        filtered = filtered[filtered["Postcode"].str.startswith(zipcode.strip())]
+    # Apply ZIP code filter if provided
+    if zipcode_input.strip() != "":
+        filtered = filtered[filtered["postalcode"].astype(str).str.startswith(zipcode_input.strip())]
 
-   # Display result count
-st.subheader(f"📋 {len(filtered)} matching events:")
+    st.subheader(f"🔍 Found {len(filtered)} matching events")
 
-# Only show results if we have matches and columns exist
-if not filtered.empty:
-    columns_to_show = ["short_description", "Topical Theme", "Effort Estimate", "Weather Badge"]
-    columns_available = [col for col in columns_to_show if col in filtered.columns]
-
-    if columns_available:
-        st.dataframe(
-            filtered[columns_available].reset_index(drop=True),
-            use_container_width=True
-        )
-    else:
-        st.warning("Matching events found, but required columns are missing.")
-else:
-    st.info("🤷 No matching events found. Try a different search or check your ZIP.")
-
-
+    # Display Event Cards
+    for _, row in filtered.iterrows():
+        with st.container(border=True):
+            st.markdown(f"### {row.get('title', 'Untitled Event')}")
+            st.markdown(f"**Organization:** {row.get('orgname', 'Unknown')}")
+            st.markdown(f"📍 **Location:** {row.get('servicelocation', 'N/A')}")
+            st.markdown(f"📅 **Date:** {row.get('startdate', 'N/A')}  \n🕒 **Time:** {row.get('starttime', '')}")
+            st.markdown(f"🏷️ **Tags:** {row.get('Topical Theme', '')}, {row.get('Effort Estimate', '')}, {row.get('Mood/Intent', '')}")
+            st.markdown(f"📝 {row.get('short_description', '')}")
+            st.markdown("---")
