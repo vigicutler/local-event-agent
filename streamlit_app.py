@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
+import hashlib
 from datetime import datetime
 from fuzzywuzzy import fuzz
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -27,7 +28,6 @@ def load_data():
     enriched["description"] = enriched["description"].fillna("")
     enriched["short_description"] = enriched["description"].str.slice(0, 140) + "..."
 
-    # Create lowercase title for merging
     enriched["title_clean"] = enriched["title"].str.strip().str.lower()
     raw["title_clean"] = raw["title"].str.strip().str.lower()
 
@@ -55,17 +55,17 @@ def load_data():
         axis=1
     )
 
-    merged["primary_loc"] = merged["primary_loc"].fillna(merged["primary_loc_y"])
-    merged["primary_loc"] = merged["primary_loc"].fillna(merged["locality"])
-    merged["primary_loc"] = merged["primary_loc"].fillna(merged["Borough"])
-    merged["primary_loc"] = merged["primary_loc"].fillna("Unknown")
+    location_cols = ["primary_loc", "primary_loc_y", "locality", "Borough", "City", "Postcode", "Location Name", "Street Address"]
+    merged["primary_loc"] = merged[location_cols].bfill(axis=1).iloc[:, 0].fillna("Unknown")
 
     merged["search_blob"] = (
         merged["title"].fillna("") + " " +
         merged["description"].fillna("") + " " +
         merged["Topical Theme"].fillna("") + " " +
         merged["Activity Type"].fillna("") + " " +
-        merged["primary_loc"].fillna("")
+        merged["primary_loc"].fillna("") + " " +
+        merged["Postcode"].fillna("") + " " +
+        merged["City"].fillna("")
     ).str.lower()
 
     return merged
@@ -149,9 +149,10 @@ if st.button("Explore"):
             filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
 
         feedback_df = pd.read_sql_query("SELECT * FROM feedback", conn)
-        filtered["community_rating"] = filtered["description"].map(
-            lambda desc: feedback_df[feedback_df["event_id"] == desc]["rating"].mean()
-            if desc in feedback_df["event_id"].values else 0
+        filtered["event_hash"] = filtered.apply(lambda row: hashlib.md5((row["title"] + row["description"]).encode()).hexdigest(), axis=1)
+        filtered["community_rating"] = filtered["event_hash"].map(
+            lambda eid: feedback_df[feedback_df["event_id"] == eid]["rating"].mean()
+            if eid in feedback_df["event_id"].values else 0
         )
 
         filtered = filtered.sort_values(by="community_rating", ascending=False)
@@ -172,7 +173,7 @@ if st.button("Explore"):
                 st.markdown(f"⭐ **Community Rating:** {row['community_rating']:.1f}/5" if row['community_rating'] > 0 else "⭐ No ratings yet")
 
                 if st.session_state.get("user"):
-                    event_id = str(row["description"])[:50]
+                    event_id = row["event_hash"]
                     with st.form(key=f"feedback_form_{event_id}"):
                         rating = st.slider("Rate this event:", min_value=1, max_value=5, key=f"rating_{event_id}")
                         feedback = st.text_area("Tell us what you thought:", key=f"feedback_{event_id}")
@@ -184,7 +185,7 @@ if st.button("Explore"):
                                 VALUES (?, ?, ?, ?, ?, ?)
                             ''', (
                                 st.session_state.user,
-                                row["description"],
+                                event_id,
                                 row.get("title", "Untitled Event"),
                                 rating,
                                 feedback,
@@ -208,6 +209,7 @@ if st.button("Explore"):
                         st.markdown(f"- **{fb_row['event_name']}**: {fb_row['rating']}⭐ — {fb_row['feedback']}")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
+
 
 
 
