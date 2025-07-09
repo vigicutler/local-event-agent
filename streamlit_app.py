@@ -89,37 +89,37 @@ final_df = load_data()
 vectorizer = TfidfVectorizer(stop_words='english')
 tfidf_matrix = vectorizer.fit_transform(final_df["search_blob"])
 
-# === Ensure Feedback CSV Exists ===
+# === Feedback CSV ===
 if not os.path.exists(FEEDBACK_CSV):
     pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"]).to_csv(FEEDBACK_CSV, index=False)
 
-# === Feedback Storage Functions ===
+# === Feedback Helpers ===
 def load_feedback():
     return pd.read_csv(FEEDBACK_CSV)
 
-def save_feedback(feedback_df):
-    feedback_df.to_csv(FEEDBACK_CSV, index=False)
+def save_feedback(df):
+    df.to_csv(FEEDBACK_CSV, index=False)
 
 def store_user_feedback(user, event_id, rating, comment):
-    feedback_df = load_feedback()
+    df = load_feedback()
     timestamp = datetime.utcnow().isoformat()
-    existing = feedback_df[(feedback_df["user"] == user) & (feedback_df["event_id"] == event_id)]
-    if not existing.empty:
-        feedback_df.loc[existing.index, ["rating", "comment", "timestamp"]] = [rating, comment, timestamp]
+    idx = df[(df.user == user) & (df.event_id == event_id)].index
+    if len(idx):
+        df.loc[idx, ["rating", "comment", "timestamp"]] = [rating, comment, timestamp]
     else:
-        feedback_df = pd.concat([feedback_df, pd.DataFrame([{ "user": user, "event_id": event_id, "rating": rating, "comment": comment, "timestamp": timestamp }])], ignore_index=True)
-    save_feedback(feedback_df)
+        df = pd.concat([df, pd.DataFrame([{"user": user, "event_id": event_id, "rating": rating, "comment": comment, "timestamp": timestamp}])], ignore_index=True)
+    save_feedback(df)
 
 def get_user_feedback(user, event_id):
-    feedback_df = load_feedback()
-    match = feedback_df[(feedback_df["user"] == user) & (feedback_df["event_id"] == event_id)]
-    if not match.empty:
-        return int(match.iloc[0]["rating"]), match.iloc[0]["comment"]
+    df = load_feedback()
+    row = df[(df.user == user) & (df.event_id == event_id)]
+    if not row.empty:
+        return int(row.iloc[0].rating), row.iloc[0].comment
     return None, ""
 
 def get_event_average_rating(event_id):
-    feedback_df = load_feedback()
-    ratings = feedback_df[feedback_df["event_id"] == event_id]["rating"]
+    df = load_feedback()
+    ratings = df[df.event_id == event_id]["rating"]
     return round(ratings.mean(), 2) if not ratings.empty else None
 
 # === Fuzzy Match ===
@@ -135,8 +135,6 @@ def get_top_matches(query, top_n=50):
     top_indices = similarity_scores.argsort()[-top_n:][::-1]
     results = final_df.iloc[top_indices].copy()
     results["relevance"] = similarity_scores[top_indices]
-    results["relevance"] += results.get("title", results.get("title_clean", "")).astype(str).str.contains(query, case=False, na=False).astype(int) * 0.2
-    results["relevance"] += results.get("Topical Theme", pd.Series("", index=results.index)).astype(str).str.contains(query, case=False, na=False).astype(int) * 0.2
     return results
 
 # === Streamlit UI ===
@@ -166,17 +164,10 @@ if st.button("Explore"):
         filtered = get_top_matches(query)
 
         if mood_input != "(no preference)":
-            def mood_match(row):
-                mood_tag = str(row.get("Mood/Intent", "")).lower()
-                desc = str(row.get("description", "")).lower()
-                return (
-                    fuzz.partial_ratio(mood_tag, mood_input.lower()) > 60 or
-                    mood_input.lower() in desc
-                )
-            filtered = filtered[filtered.apply(mood_match, axis=1)]
+            filtered = filtered[filtered["Mood/Intent"].str.contains(mood_input, case=False, na=False)]
 
         if zipcode_input.strip():
-            filtered = filtered[filtered.get("Postcode", pd.Series("", index=filtered.index)).astype(str).str.startswith(zipcode_input.strip())]
+            filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
 
         filtered = filtered.sort_values(by="relevance", ascending=False)
         st.subheader(f"🔍 Found {len(filtered)} matching events")
@@ -202,7 +193,10 @@ if st.button("Explore"):
                     st.markdown(f"⭐ **Community Rating:** {avg_rating} / 5")
 
                 user_rating, user_comment = get_user_feedback(st.session_state.user, event_id)
-                initial_rating = int(user_rating) if user_rating is not None else 3
+                initial_rating = user_rating if user_rating else 3
+
+                if user_rating is not None:
+                    st.markdown(f"🧠 _You’ve rated this {user_rating} stars._")
 
                 with st.form(key=f"form_{event_id}"):
                     rating = st.slider("Rate this event:", 1, 5, value=initial_rating, key=f"rating_{event_id}")
@@ -214,6 +208,7 @@ if st.button("Explore"):
         st.warning("Please enter something you'd like to help with.")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
+
 
 
 
