@@ -64,13 +64,13 @@ def load_data():
 
     title_col = "title" if "title" in merged.columns else "title_clean"
     merged["search_blob"] = (
-        merged[title_col].fillna("") + " " +
-        merged["description"].fillna("") + " " +
-        merged.get("Topical Theme", pd.Series("", index=merged.index)).fillna("") + " " +
-        merged.get("Activity Type", pd.Series("", index=merged.index)).fillna("") + " " +
-        merged["primary_loc"].fillna("") + " " +
-        merged.get("Postcode", pd.Series("", index=merged.index)).fillna("") + " " +
-        merged.get("City", pd.Series("", index=merged.index)).fillna("")
+        merged[title_col].fillna("").astype(str) + " " +
+        merged["description"].fillna("").astype(str) + " " +
+        merged.get("Topical Theme", pd.Series("", index=merged.index)).fillna("").astype(str) + " " +
+        merged.get("Activity Type", pd.Series("", index=merged.index)).fillna("").astype(str) + " " +
+        merged["primary_loc"].fillna("").astype(str) + " " +
+        merged.get("Postcode", pd.Series("", index=merged.index)).fillna("").astype(str) + " " +
+        merged.get("City", pd.Series("", index=merged.index)).fillna("").astype(str)
     ).str.lower()
 
     return merged
