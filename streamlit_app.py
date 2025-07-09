@@ -97,7 +97,13 @@ def ensure_feedback_csv():
             pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"]).to_csv(FEEDBACK_CSV, index=False)
         with open(FEEDBACK_CSV, 'a'): pass
     except Exception as e:
-        st.session_state.feedback_memory = pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"])
+        st.session_state.feedback_memory = pd.DataFrame([
+            {"user": "vigi",  "event_id": "evt_park",   "rating": 5, "comment": "Love park events!", "timestamp": datetime.utcnow()},
+            {"user": "juan",  "event_id": "evt_nature", "rating": 4, "comment": "Educational and relaxing.", "timestamp": datetime.utcnow()},
+            {"user": "bruce", "event_id": "evt_animals", "rating": 5, "comment": "Great for animal lovers!", "timestamp": datetime.utcnow()},
+            {"user": "ana",   "event_id": "evt_art_kids", "rating": 4, "comment": "Loved the creative activities.", "timestamp": datetime.utcnow()},
+            {"user": "andy",  "event_id": "evt_tech_music", "rating": 5, "comment": "Really cool tech + music combo.", "timestamp": datetime.utcnow()}
+        ])
         st.warning("⚠️ Feedback is temporarily stored in memory. Changes won't persist between sessions.")
 
 ensure_feedback_csv()
