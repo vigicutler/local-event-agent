@@ -81,10 +81,17 @@ final_df = load_data()
 vectorizer = TfidfVectorizer(stop_words='english')
 tfidf_matrix = vectorizer.fit_transform(final_df["search_blob"])
 
-# === Database ===
-conn = sqlite3.connect("feedback.db")
+# === Singleton DB Connection ===
+@st.experimental_singleton
+def get_connection():
+    conn = sqlite3.connect("feedback.db", check_same_thread=False)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS feedback (user TEXT, event_id TEXT, rating INTEGER, comment TEXT, timestamp TEXT, PRIMARY KEY (user, event_id))''')
+    conn.commit()
+    return conn
+
+conn = get_connection()
 c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS feedback (user TEXT, event_id TEXT, rating INTEGER, comment TEXT, timestamp TEXT, PRIMARY KEY (user, event_id))''')
 
 # === Community Ratings ===
 def get_average_rating(event_id):
@@ -172,7 +179,7 @@ if st.button("Explore"):
 
                 event_id = hashlib.md5((row.get("title", "") + row.get("description", "")).encode()).hexdigest()
                 avg_rating = get_average_rating(event_id)
-                if avg_rating:
+                if avg_rating is not None:
                     st.markdown(f"⭐ **Community Rating:** {avg_rating} / 5")
 
                 user_feedback = get_user_feedback(st.session_state.user, event_id)
@@ -193,7 +200,6 @@ if st.button("Explore"):
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
 
-conn.close()
 
 
 
