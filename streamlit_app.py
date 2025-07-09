@@ -110,7 +110,6 @@ def store_user_feedback(user, event_id, rating, comment):
         df = pd.concat([df, pd.DataFrame([{"user": user, "event_id": event_id, "rating": rating, "comment": comment, "timestamp": timestamp}])], ignore_index=True)
     save_feedback(df)
 
-
 def get_user_feedback(user, event_id):
     df = load_feedback()
     row = df[(df.user == user) & (df.event_id == event_id)]
@@ -176,6 +175,8 @@ if st.button("Explore"):
         if len(filtered) == 0:
             st.info("No matching events found. Try another keyword like 'clean', 'educate', or 'connect'.")
 
+        used_forms = set()
+
         for _, row in filtered.iterrows():
             with st.container(border=True):
                 st.markdown(f"### {row.get('title', 'Untitled Event')}")
@@ -200,13 +201,15 @@ if st.button("Explore"):
                 if user_rating is not None:
                     st.markdown(f"🧠 _You’ve rated this {user_rating} stars._")
 
-                with st.form(key=f"form_{event_id}"):
-                    rating = st.slider("Rate this event:", 1, 5, value=initial_rating, key=f"rating_{event_id}")
-                    comment = st.text_input("Leave feedback:", value=user_comment, key=f"comment_{event_id}")
-                    if st.form_submit_button("Submit Feedback"):
-                        store_user_feedback(st.session_state.user, event_id, rating, comment)
-                        st.success("Feedback submitted!")
-                        st.experimental_rerun()
+                if event_id not in used_forms:
+                    with st.form(key=f"form_{event_id}"):
+                        rating = st.slider("Rate this event:", 1, 5, value=initial_rating, key=f"rating_{event_id}")
+                        comment = st.text_input("Leave feedback:", value=user_comment, key=f"comment_{event_id}")
+                        if st.form_submit_button("Submit Feedback"):
+                            store_user_feedback(st.session_state.user, event_id, rating, comment)
+                            st.success("Feedback submitted!")
+                            st.experimental_rerun()
+                    used_forms.add(event_id)
     else:
         st.warning("Please enter something you'd like to help with.")
 else:
