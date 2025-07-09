@@ -55,7 +55,10 @@ def load_data():
         merged["title"].fillna("") + " " +
         merged["description"].fillna("") + " " +
         merged["Topical Theme"].fillna("") + " " +
-        merged["Activity Type"].fillna("")
+        merged["Activity Type"].fillna("") + " " +
+        merged["primary_loc"].fillna("") + " " +
+        merged["locality"].fillna("") + " " +
+        merged["Borough"].fillna("")
     ).str.lower()
 
     return merged
@@ -100,12 +103,12 @@ conn.commit()
 # === UI ===
 st.set_page_config(page_title="Local Event Agent", layout="centered")
 st.title("🌱 NYC Community Event Agent")
-st.markdown("Choose how you'd like to help and find meaningful events near you.")
 
 # --- Persistent login in sidebar ---
 with st.sidebar:
+    st.header("🔐 User Login")
     if 'user' not in st.session_state or not st.session_state.user:
-        username = st.text_input("🧑‍💻 Enter your name:", key="login_name")
+        username = st.text_input("Enter your name:", key="login_name")
         if username:
             st.session_state.user = username
             st.success(f"Welcome, {username}!")
@@ -113,6 +116,8 @@ with st.sidebar:
         st.markdown(f"👋 Hello, **{st.session_state.user}**")
         if st.button("Logout"):
             del st.session_state.user
+
+st.markdown("Choose how you'd like to help and find meaningful events near you.")
 
 intent_input = st.text_input("🙋‍♀️ How can I help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
 mood_input = st.selectbox("💫 Optional — Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
@@ -159,25 +164,28 @@ if st.button("Explore"):
                 st.markdown(f"📝 {row.get('short_description', '')}")
                 st.markdown(f"⭐ **Community Rating:** {row['community_rating']:.1f}/5" if row['community_rating'] > 0 else "⭐ No ratings yet")
 
-                rating = st.slider(f"Rate this event:", min_value=1, max_value=5, key=f"rating_{row.name}")
-                feedback = st.text_area("Tell us what you thought:", key=f"feedback_{row.name}")
-                if st.button("Submit Feedback", key=f"submit_{row.name}"):
-                    timestamp = datetime.now().isoformat()
-                    c.execute('''
-                        INSERT INTO feedback (user, event_id, event_name, rating, feedback, timestamp)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (
-                        st.session_state.user,
-                        row["description"],
-                        row.get("title", "Untitled Event"),
-                        rating,
-                        feedback,
-                        timestamp
-                    ))
-                    conn.commit()
-                    st.success("✅ Feedback submitted!")
+                if st.session_state.get("user"):
+                    rating = st.slider(f"Rate this event:", min_value=1, max_value=5, key=f"rating_{row.name}")
+                    feedback = st.text_area("Tell us what you thought:", key=f"feedback_{row.name}")
+                    if st.button("Submit Feedback", key=f"submit_{row.name}"):
+                        timestamp = datetime.now().isoformat()
+                        c.execute('''
+                            INSERT INTO feedback (user, event_id, event_name, rating, feedback, timestamp)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        ''', (
+                            st.session_state.user,
+                            row["description"],
+                            row.get("title", "Untitled Event"),
+                            rating,
+                            feedback,
+                            timestamp
+                        ))
+                        conn.commit()
+                        st.success("✅ Feedback submitted!")
+                else:
+                    st.info("🔐 Please log in from the sidebar to leave feedback.")
 
-        if st.session_state.user:
+        if st.session_state.get("user"):
             user_feedback = pd.read_sql_query(
                 "SELECT * FROM feedback WHERE user = ?", conn, params=(st.session_state.user,)
             )
