@@ -27,10 +27,14 @@ def load_data():
     enriched["description"] = enriched["description"].fillna("")
     enriched["short_description"] = enriched["description"].str.slice(0, 140) + "..."
 
+    # Create lowercase title for merging
+    enriched["title_clean"] = enriched["title"].str.strip().str.lower()
+    raw["title_clean"] = raw["title"].str.strip().str.lower()
+
     merged = pd.merge(
         enriched,
         raw,
-        on="title",
+        on="title_clean",
         how="left",
         suffixes=("", "_y")
     )
@@ -157,10 +161,10 @@ if st.button("Explore"):
         for _, row in filtered.iterrows():
             with st.container(border=True):
                 st.markdown(f"### {row.get('title', 'Untitled Event')}")
-                st.markdown(f"**Organization:** {row.get('org_title', 'Unknown')}")
+                st.markdown(f"**Organization:** {row.get('org_title_y', 'Unknown')}")
                 location = row.get('primary_loc') or "Unknown"
                 st.markdown(f"\U0001F4CD **Location:** {location}")
-                st.markdown(f"\U0001F4C5 **Date:** {row.get('start_date_date', 'N/A')}")
+                st.markdown(f"\U0001F4C5 **Date:** {row.get('start_date_date_y', 'N/A')}")
                 tags = [row.get('Topical Theme', ''), row.get('Effort Estimate', ''), row.get('Mood/Intent', '')]
                 tag_str = " ".join([f"`{t.strip()}`" for t in tags if t])
                 st.markdown(f"🏷️ {tag_str}")
@@ -168,9 +172,10 @@ if st.button("Explore"):
                 st.markdown(f"⭐ **Community Rating:** {row['community_rating']:.1f}/5" if row['community_rating'] > 0 else "⭐ No ratings yet")
 
                 if st.session_state.get("user"):
-                    with st.form(key=f"feedback_form_{row.name}"):
-                        rating = st.slider("Rate this event:", min_value=1, max_value=5, key=f"rating_{row.name}")
-                        feedback = st.text_area("Tell us what you thought:", key=f"feedback_{row.name}")
+                    event_id = str(row["description"])[:50]
+                    with st.form(key=f"feedback_form_{event_id}"):
+                        rating = st.slider("Rate this event:", min_value=1, max_value=5, key=f"rating_{event_id}")
+                        feedback = st.text_area("Tell us what you thought:", key=f"feedback_{event_id}")
                         submit = st.form_submit_button("Submit Feedback")
                         if submit:
                             timestamp = datetime.now().isoformat()
@@ -201,15 +206,9 @@ if st.button("Explore"):
                 else:
                     for _, fb_row in user_feedback.iterrows():
                         st.markdown(f"- **{fb_row['event_name']}**: {fb_row['rating']}⭐ — {fb_row['feedback']}")
-
-            with st.sidebar.expander("\U0001F50D Debug Info"):
-                st.write("Logged in user:", st.session_state.get("user", "None"))
-                st.write("Filtered Data Columns:", filtered.columns.tolist())
-
-    else:
-        st.warning("Please enter something you'd like to help with.")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
+
 
 
 
