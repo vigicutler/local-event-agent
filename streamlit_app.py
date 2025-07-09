@@ -130,14 +130,6 @@ def get_event_average_rating(event_id):
     ratings = feedback_df[feedback_df["event_id"] == event_id]["rating"]
     return round(ratings.mean(), 2) if not ratings.empty else None
 
-# === Utility Functions for Recommendation (placeholder for now) ===
-def compute_similarity(df, target_blob):
-    tfidf = TfidfVectorizer(stop_words="english")
-    tfidf_matrix = tfidf.fit_transform(df["search_blob"])
-    target_vector = tfidf.transform([target_blob])
-    cosine_sim = cosine_similarity(target_vector, tfidf_matrix).flatten()
-    return cosine_sim
-
 # === Fuzzy Match ===
 def get_top_matches(query, top_n=50):
     expanded_terms = [query.lower()]
@@ -154,6 +146,82 @@ def get_top_matches(query, top_n=50):
     results["relevance"] += results.get("title", results.get("title_clean", "")).astype(str).str.contains(query, case=False, na=False).astype(int) * 0.2
     results["relevance"] += results.get("Topical Theme", pd.Series("", index=results.index)).astype(str).str.contains(query, case=False, na=False).astype(int) * 0.2
     return results
+
+# === Streamlit UI ===
+if "user" not in st.session_state:
+    st.session_state.user = "Guest"
+
+with st.sidebar:
+    st.subheader("🔐 Login")
+    username = st.text_input("Username", value=st.session_state.user)
+    if st.button("Login"):
+        st.session_state.user = username
+    st.write(f"You are logged in as: `{st.session_state.user}`")
+    if st.button("Logout"):
+        st.session_state.user = "Guest"
+
+st.set_page_config(page_title="Local Event Agent", layout="centered")
+st.title("🌱 NYC Community Event Agent")
+st.markdown("Choose how you'd like to help and find meaningful events near you.")
+
+intent_input = st.text_input("🙋‍♀️ How can I help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
+mood_input = st.selectbox("💫 Optional — Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
+zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
+
+if st.button("Explore"):
+    query = intent_input.strip()
+    if query:
+        filtered = get_top_matches(query)
+
+        if mood_input != "(no preference)":
+            def mood_match(row):
+                mood_tag = str(row.get("Mood/Intent", "")).lower()
+                desc = str(row.get("description", "")).lower()
+                return (
+                    fuzz.partial_ratio(mood_tag, mood_input.lower()) > 60 or
+                    mood_input.lower() in desc
+                )
+            filtered = filtered[filtered.apply(mood_match, axis=1)]
+
+        if zipcode_input.strip():
+            filtered = filtered[filtered.get("Postcode", pd.Series("", index=filtered.index)).astype(str).str.startswith(zipcode_input.strip())]
+
+        filtered = filtered.sort_values(by="relevance", ascending=False)
+        st.subheader(f"🔍 Found {len(filtered)} matching events")
+
+        if len(filtered) == 0:
+            st.info("No matching events found. Try another keyword like 'clean', 'educate', or 'connect'.")
+
+        for _, row in filtered.iterrows():
+            with st.container(border=True):
+                st.markdown(f"### {row.get('title', 'Untitled Event')}")
+                st.markdown(f"**Organization:** {row.get('org_title_y', 'Unknown')}")
+                st.markdown(f"📍 **Location:** {row.get('primary_loc', 'Unknown')}")
+                st.markdown(f"📅 **Date:** {row.get('start_date_date_y', 'N/A')}")
+                tags = [row.get('Topical Theme', ''), row.get('Effort Estimate', ''), row.get('Mood/Intent', '')]
+                tag_str = " ".join([f"`{t.strip()}`" for t in tags if t])
+                st.markdown(f"🏷️ {tag_str}")
+                st.markdown(f"📝 {row.get('short_description', '')}")
+
+                event_id = hashlib.md5((row.get("title", "") + row.get("description", "")).encode()).hexdigest()
+                avg_rating = get_event_average_rating(event_id)
+                if avg_rating is not None:
+                    st.markdown(f"⭐ **Community Rating:** {avg_rating} / 5")
+
+                user_rating, user_comment = get_user_feedback(st.session_state.user, event_id)
+                initial_rating = int(user_rating) if user_rating is not None else 3
+
+                with st.form(key=f"form_{event_id}"):
+                    rating = st.slider("Rate this event:", 1, 5, value=initial_rating, key=f"rating_{event_id}")
+                    comment = st.text_input("Leave feedback:", value=user_comment, key=f"comment_{event_id}")
+                    if st.form_submit_button("Submit Feedback"):
+                        store_user_feedback(st.session_state.user, event_id, rating, comment)
+                        st.success("Feedback submitted!")
+    else:
+        st.warning("Please enter something you'd like to help with.")
+else:
+    st.info("Enter your interest and click **Explore** to find matching events.")
+
 
 
 
