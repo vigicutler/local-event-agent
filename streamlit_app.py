@@ -2,10 +2,13 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import hashlib
+import os
 from datetime import datetime
 from fuzzywuzzy import fuzz
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+
+FEEDBACK_CSV = "feedback_backup.csv"
 
 # === Synonym Expansion Map ===
 SYNONYM_MAP = {
@@ -92,6 +95,21 @@ def get_connection():
 
 conn = get_connection()
 c = conn.cursor()
+
+# === CSV Backup Save ===
+def save_to_csv(user, event_id, rating, comment):
+    try:
+        if os.path.exists(FEEDBACK_CSV):
+            df = pd.read_csv(FEEDBACK_CSV)
+        else:
+            df = pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"])
+        timestamp = datetime.utcnow().isoformat()
+        new_row = pd.DataFrame([[user, event_id, rating, comment, timestamp]], columns=df.columns)
+        df = df[df["user"] != user]  # remove old rating by user if any
+        df = pd.concat([df, new_row], ignore_index=True)
+        df.to_csv(FEEDBACK_CSV, index=False)
+    except Exception as e:
+        st.error(f"CSV backup failed: {e}")
 
 # === Community Ratings ===
 def get_average_rating(event_id):
@@ -193,6 +211,7 @@ if st.button("Explore"):
                         c.execute("REPLACE INTO feedback (user, event_id, rating, comment, timestamp) VALUES (?, ?, ?, ?, ?)",
                                   (st.session_state.user, event_id, rating, comment, datetime.utcnow().isoformat()))
                         conn.commit()
+                        save_to_csv(st.session_state.user, event_id, rating, comment)
                         st.success("Feedback submitted!")
 
     else:
