@@ -62,8 +62,9 @@ def load_data():
     else:
         merged["primary_loc"] = "Unknown"
 
+    title_col = "title" if "title" in merged.columns else "title_clean"
     merged["search_blob"] = (
-        merged.get("title", merged.get("title_clean", "")).fillna("") + " " +
+        merged[title_col].fillna("") + " " +
         merged["description"].fillna("") + " " +
         merged["Topical Theme"].fillna("") + " " +
         merged["Activity Type"].fillna("") + " " +
@@ -175,7 +176,6 @@ if st.button("Explore"):
         st.warning("Please enter something you'd like to help with.")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
-
 
 
 
