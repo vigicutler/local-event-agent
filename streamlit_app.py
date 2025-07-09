@@ -89,16 +89,30 @@ final_df = load_data()
 vectorizer = TfidfVectorizer(stop_words='english')
 tfidf_matrix = vectorizer.fit_transform(final_df["search_blob"])
 
-# === Feedback CSV ===
-if not os.path.exists(FEEDBACK_CSV):
-    pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"]).to_csv(FEEDBACK_CSV, index=False)
+# === Feedback Storage ===
+def ensure_feedback_csv():
+    try:
+        if not os.path.exists(FEEDBACK_CSV):
+            pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"]).to_csv(FEEDBACK_CSV, index=False)
+        with open(FEEDBACK_CSV, 'a'): pass  # Ensure it's writable
+    except Exception as e:
+        st.session_state.feedback_memory = pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"])
+        st.warning("⚠️ Feedback is temporarily stored in memory. Changes won't persist between sessions.")
+
+ensure_feedback_csv()
 
 # === Feedback Helpers ===
 def load_feedback():
-    return pd.read_csv(FEEDBACK_CSV)
+    try:
+        return pd.read_csv(FEEDBACK_CSV)
+    except:
+        return st.session_state.get("feedback_memory", pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"]))
 
 def save_feedback(df):
-    df.to_csv(FEEDBACK_CSV, index=False)
+    try:
+        df.to_csv(FEEDBACK_CSV, index=False)
+    except:
+        st.session_state.feedback_memory = df
 
 def store_user_feedback(user, event_id, rating, comment):
     df = load_feedback()
@@ -126,14 +140,13 @@ def get_event_rating_count(event_id):
     df = load_feedback()
     return df[df.event_id == event_id].shape[0]
 
-# === Fuzzy Match ===
+# === Match ===
 def get_top_matches(query, top_n=50):
     expanded_terms = [query.lower()]
     for key, synonyms in SYNONYM_MAP.items():
         if key in query.lower():
             expanded_terms += synonyms
     expanded_query = " ".join(expanded_terms)
-
     query_vec = vectorizer.transform([expanded_query])
     similarity_scores = cosine_similarity(query_vec, tfidf_matrix).flatten()
     top_indices = similarity_scores.argsort()[-top_n:][::-1]
@@ -141,7 +154,7 @@ def get_top_matches(query, top_n=50):
     results["relevance"] = similarity_scores[top_indices]
     return results
 
-# === Streamlit UI ===
+# === UI ===
 if "user" not in st.session_state:
     st.session_state.user = "Guest"
 
@@ -181,7 +194,7 @@ if st.button("Explore"):
 
         used_forms = set()
 
-        for _, row in filtered.iterrows():
+        for i, row in filtered.iterrows():
             with st.container(border=True):
                 st.markdown(f"### {row.get('title', 'Untitled Event')}")
                 st.markdown(f"**Organization:** {row.get('org_title_y', 'Unknown')}")
@@ -206,20 +219,20 @@ if st.button("Explore"):
                 if user_rating is not None:
                     st.markdown(f"🧠 _You’ve rated this {user_rating} stars._")
 
-                if event_id not in used_forms:
-                    with st.form(key=f"form_{event_id}"):
+                form_key = f"form_{event_id}_{i}"
+                if form_key not in used_forms:
+                    with st.form(key=form_key):
                         rating = st.slider("Rate this event:", 1, 5, value=initial_rating, key=f"rating_{event_id}")
                         comment = st.text_input("Leave feedback:", value=user_comment, key=f"comment_{event_id}")
                         if st.form_submit_button("Submit Feedback"):
                             store_user_feedback(st.session_state.user, event_id, rating, comment)
                             st.success("Feedback submitted!")
                             st.experimental_rerun()
-                    used_forms.add(event_id)
+                    used_forms.add(form_key)
     else:
         st.warning("Please enter something you'd like to help with.")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
-
 
 
 
