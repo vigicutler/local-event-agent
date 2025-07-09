@@ -82,7 +82,7 @@ vectorizer = TfidfVectorizer(stop_words='english')
 tfidf_matrix = vectorizer.fit_transform(final_df["search_blob"])
 
 # === Singleton DB Connection ===
-@st.experimental_singleton
+@st.cache_resource
 def get_connection():
     conn = sqlite3.connect("feedback.db", check_same_thread=False)
     c = conn.cursor()
@@ -199,6 +199,7 @@ if st.button("Explore"):
         st.warning("Please enter something you'd like to help with.")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
+
 
 
 
