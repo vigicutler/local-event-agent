@@ -60,6 +60,8 @@ def load_data():
         merged["Activity Type"].fillna("")
     ).str.lower()
 
+    merged["primary_loc_y"] = merged["primary_loc_y"].fillna(merged.get("location", "Unknown"))
+
     return merged
 
 final_df = load_data()
@@ -101,23 +103,24 @@ conn.commit()
 
 # === UI ===
 st.set_page_config(page_title="Local Event Agent", layout="centered")
-st.title("\ud83c\udf31 NYC Community Event Agent")
+st.title("🌱 NYC Community Event Agent")
 st.markdown("Choose how you'd like to help and find meaningful events near you.")
 
-# Login Input
-if 'user' not in st.session_state:
-    st.session_state.user = None
-if not st.session_state.user:
-    username = st.text_input("Enter your name to get started:")
-    if username:
-        st.session_state.user = username
-        st.success(f"Welcome, {username}!")
-else:
-    st.write(f"\ud83d\udc4b Hello, **{st.session_state.user}**")
+# --- Persistent login in sidebar ---
+with st.sidebar:
+    if 'user' not in st.session_state or not st.session_state.user:
+        username = st.text_input("🧑‍💻 Enter your name:", key="login_name")
+        if username:
+            st.session_state.user = username
+            st.success(f"Welcome, {username}!")
+    else:
+        st.markdown(f"👋 Hello, **{st.session_state.user}**")
+        if st.button("Logout"):
+            del st.session_state.user
 
-intent_input = st.text_input("\ud83d\ude4b\u200d\u2640\ufe0f How can I help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
-mood_input = st.selectbox("\ud83d\udcab Optional \u2014 Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
-zipcode_input = st.text_input("\ud83d\udccd Optional \u2014 ZIP Code", placeholder="e.g. 10027")
+intent_input = st.text_input("🙋‍♀️ How can I help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
+mood_input = st.selectbox("💫 Optional — Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
+zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
 
 if st.button("Explore"):
     query = intent_input.strip()
@@ -145,19 +148,20 @@ if st.button("Explore"):
 
         filtered = filtered.sort_values(by="community_rating", ascending=False)
 
-        st.subheader(f"\ud83d\udd0d Found {len(filtered)} matching events")
+        st.subheader(f"🔍 Found {len(filtered)} matching events")
 
         for _, row in filtered.iterrows():
             with st.container(border=True):
                 st.markdown(f"### {row.get('title_y', 'Untitled Event')}")
                 st.markdown(f"**Organization:** {row.get('org_title_y', 'Unknown')}")
-                st.markdown(f"\ud83d\udccd **Location:** {row.get('primary_loc_y', 'N/A')}")
-                st.markdown(f"\ud83d\uddd3\ufe0f **Date:** {row.get('start_date_date_y', 'N/A')}")
+                location = row.get('primary_loc_y') or row.get('location') or "Unknown"
+                st.markdown(f"📍 **Location:** {location}")
+                st.markdown(f"📅 **Date:** {row.get('start_date_date_y', 'N/A')}")
                 tags = [row.get('Topical Theme', ''), row.get('Effort Estimate', ''), row.get('Mood/Intent', '')]
                 tag_str = " ".join([f"`{t.strip()}`" for t in tags if t])
-                st.markdown(f"\ud83c\udf02 {tag_str}")
-                st.markdown(f"\ud83d\udcdd {row.get('short_description', '')}")
-                st.markdown(f"\u2b50 **Community Rating:** {row['community_rating']:.1f}/5" if row['community_rating'] > 0 else "\u2b50 No ratings yet")
+                st.markdown(f"🏷️ {tag_str}")
+                st.markdown(f"📝 {row.get('short_description', '')}")
+                st.markdown(f"⭐ **Community Rating:** {row['community_rating']:.1f}/5" if row['community_rating'] > 0 else "⭐ No ratings yet")
 
                 rating = st.slider(f"Rate this event:", min_value=1, max_value=5, key=f"rating_{row.name}")
                 feedback = st.text_area("Tell us what you thought:", key=f"feedback_{row.name}")
@@ -175,23 +179,28 @@ if st.button("Explore"):
                         timestamp
                     ))
                     conn.commit()
-                    st.success("\u2705 Feedback submitted!")
+                    st.success("✅ Feedback submitted!")
 
         if st.session_state.user:
             user_feedback = pd.read_sql_query(
                 "SELECT * FROM feedback WHERE user = ?", conn, params=(st.session_state.user,)
             )
             with st.sidebar:
-                st.markdown("\ud83d\udcdd **Your Previous Ratings**")
+                st.markdown("📝 **Your Previous Ratings**")
                 if user_feedback.empty:
                     st.write("No feedback submitted yet.")
                 else:
                     for _, fb_row in user_feedback.iterrows():
-                        st.markdown(f"- **{fb_row['event_name']}**: {fb_row['rating']}\u2b50 \u2014 {fb_row['feedback']}")
+                        st.markdown(f"- **{fb_row['event_name']}**: {fb_row['rating']}⭐ — {fb_row['feedback']}")
+
+            with st.sidebar.expander("🔍 Debug Info"):
+                st.write("Logged in user:", st.session_state.get("user", "None"))
+                st.write("Filtered Data Columns:", filtered.columns.tolist())
 
     else:
         st.warning("Please enter something you'd like to help with.")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
+
 
 
