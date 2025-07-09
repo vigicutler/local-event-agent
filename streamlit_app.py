@@ -103,6 +103,7 @@ def ensure_feedback_csv():
             {"user": "andy",  "event_id": "evt_tech_music", "rating": 5, "comment": "Really cool tech + music combo.", "timestamp": datetime.utcnow()}
         ])
         st.warning("⚠️ Feedback is temporarily stored in memory. Changes won't persist between sessions.")
+        st.info("💡 Feedback fallback mode: writing to memory only.")
 
 ensure_feedback_csv()
 
@@ -157,6 +158,28 @@ def save_feedback(user, event_id, rating, comment):
         df.to_csv(FEEDBACK_CSV, index=False)
     except Exception:
         st.session_state.feedback_memory = df
+        st.info("📦 Saved feedback in memory fallback mode.")
+
+def get_user_history(user):
+    df = load_feedback()
+    return df[df.user == user]
+
+def recommend_similar_events(user, top_n=5):
+    history = get_user_history(user)
+    if history.empty:
+        return pd.DataFrame()
+    final_df_copy = final_df.copy()
+    final_df_copy["event_id"] = final_df_copy.apply(lambda row: get_event_id(row.get("title", ""), row.get("description", "")), axis=1)
+    joined = pd.merge(history, final_df_copy, on="event_id")
+    if joined.empty:
+        return pd.DataFrame()
+    liked = joined[joined.rating >= 4]
+    if liked.empty:
+        return pd.DataFrame()
+    liked_vec = vectorizer.transform(liked["search_blob"])
+    sim_scores = cosine_similarity(liked_vec, tfidf_matrix).mean(axis=0)
+    indices = sim_scores.argsort()[-top_n:][::-1]
+    return final_df.iloc[indices]
 
 if st.button("Explore"):
     query = intent_input.strip()
@@ -184,8 +207,9 @@ if st.button("Explore"):
 
             event_feedback = feedback_df[feedback_df.event_id == event_id]
             avg_rating = event_feedback["rating"].mean() if not event_feedback.empty else None
+            count = len(event_feedback)
             if avg_rating:
-                st.markdown(f"⭐ **Community Rating:** {round(avg_rating, 2)} / 5")
+                st.markdown(f"⭐ **Community Rating:** {round(avg_rating, 2)} / 5 ({count} ratings)")
 
             user_row = feedback_df[(feedback_df.user == st.session_state.user) & (feedback_df.event_id == event_id)]
             initial_rating = int(user_row["rating"].iloc[0]) if not user_row.empty else 3
@@ -197,6 +221,22 @@ if st.button("Explore"):
                 if st.form_submit_button("Submit Feedback"):
                     save_feedback(st.session_state.user, event_id, rating, comment)
                     st.success("✅ Feedback submitted!")
+
+        # Recommended events
+        recs = recommend_similar_events(st.session_state.user)
+        if not recs.empty:
+            st.markdown("---")
+            st.subheader("🎯 Recommended Events Based on Your Ratings")
+            for _, row in recs.iterrows():
+                st.markdown(f"- **{row.get('title')}** ({row.get('primary_loc', 'Unknown')})")
+
+        # Feedback history
+        history = get_user_history(st.session_state.user)
+        if not history.empty:
+            st.markdown("---")
+            st.subheader("📝 Your Feedback History")
+            st.dataframe(history.sort_values("timestamp", ascending=False).reset_index(drop=True))
+
     else:
         st.warning("Please enter something you'd like to help with.")
 else:
