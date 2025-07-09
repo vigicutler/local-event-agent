@@ -122,6 +122,10 @@ def get_event_average_rating(event_id):
     ratings = df[df.event_id == event_id]["rating"]
     return round(ratings.mean(), 2) if not ratings.empty else None
 
+def get_event_rating_count(event_id):
+    df = load_feedback()
+    return df[df.event_id == event_id].shape[0]
+
 # === Fuzzy Match ===
 def get_top_matches(query, top_n=50):
     expanded_terms = [query.lower()]
@@ -192,8 +196,9 @@ if st.button("Explore"):
                 event_id = hashlib.md5(event_unique_str.encode()).hexdigest()
 
                 avg_rating = get_event_average_rating(event_id)
-                if avg_rating is not None:
-                    st.markdown(f"⭐ **Community Rating:** {avg_rating} / 5")
+                rating_count = get_event_rating_count(event_id)
+                if avg_rating is not None and rating_count > 0:
+                    st.markdown(f"⭐ **Community Rating:** {avg_rating} / 5 from {rating_count} rating(s)")
 
                 user_rating, user_comment = get_user_feedback(st.session_state.user, event_id)
                 initial_rating = user_rating if user_rating is not None else 3
@@ -214,6 +219,7 @@ if st.button("Explore"):
         st.warning("Please enter something you'd like to help with.")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
+
 
 
 
