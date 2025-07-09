@@ -66,11 +66,11 @@ def load_data():
     merged["search_blob"] = (
         merged[title_col].fillna("").astype(str) + " " +
         merged["description"].fillna("").astype(str) + " " +
-        merged.get("Topical Theme", pd.Series("", index=merged.index)).fillna("").astype(str) + " " +
-        merged.get("Activity Type", pd.Series("", index=merged.index)).fillna("").astype(str) + " " +
+        merged.get("Topical Theme", pd.Series([""] * len(merged))).fillna("").astype(str) + " " +
+        merged.get("Activity Type", pd.Series([""] * len(merged))).fillna("").astype(str) + " " +
         merged["primary_loc"].fillna("").astype(str) + " " +
-        merged.get("Postcode", pd.Series("", index=merged.index)).fillna("").astype(str) + " " +
-        merged.get("City", pd.Series("", index=merged.index)).fillna("").astype(str)
+        merged.get("Postcode", pd.Series([""] * len(merged))).fillna("").astype(str) + " " +
+        merged.get("City", pd.Series([""] * len(merged))).fillna("").astype(str)
     ).str.lower()
 
     return merged
@@ -81,6 +81,18 @@ final_df = load_data()
 vectorizer = TfidfVectorizer(stop_words='english')
 tfidf_matrix = vectorizer.fit_transform(final_df["search_blob"])
 
+# === Database ===
+conn = sqlite3.connect("feedback.db")
+c = conn.cursor()
+c.execute('''CREATE TABLE IF NOT EXISTS feedback (user TEXT, event_id TEXT, rating INTEGER, comment TEXT, timestamp TEXT)''')
+
+# === Community Ratings ===
+def get_average_rating(event_id):
+    c.execute("SELECT AVG(rating) FROM feedback WHERE event_id=?", (event_id,))
+    avg = c.fetchone()[0]
+    return round(avg, 2) if avg is not None else None
+
+# === Fuzzy Match ===
 def get_top_matches(query, top_n=50):
     expanded_terms = [query.lower()]
     for key, synonyms in SYNONYM_MAP.items():
@@ -143,10 +155,6 @@ if st.button("Explore"):
         if len(filtered) == 0:
             st.info("No matching events found. Try another keyword like 'clean', 'educate', or 'connect'.")
 
-        conn = sqlite3.connect("feedback.db")
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS feedback (user TEXT, event_id TEXT, rating INTEGER, comment TEXT, timestamp TEXT)''')
-
         for _, row in filtered.iterrows():
             with st.container(border=True):
                 st.markdown(f"### {row.get('title', 'Untitled Event')}")
@@ -159,6 +167,10 @@ if st.button("Explore"):
                 st.markdown(f"📝 {row.get('short_description', '')}")
 
                 event_id = hashlib.md5((row.get("title", "") + row.get("description", "")).encode()).hexdigest()
+                avg_rating = get_average_rating(event_id)
+                if avg_rating:
+                    st.markdown(f"⭐ **Community Rating:** {avg_rating} / 5")
+
                 with st.form(key=f"form_{event_id}"):
                     rating = st.slider("Rate this event:", 1, 5, key=f"rating_{event_id}")
                     comment = st.text_input("Leave feedback:", key=f"comment_{event_id}")
@@ -168,11 +180,13 @@ if st.button("Explore"):
                         conn.commit()
                         st.success("Feedback submitted!")
 
-        conn.close()
     else:
         st.warning("Please enter something you'd like to help with.")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
+
+conn.close()
+
 
 
 
