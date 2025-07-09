@@ -51,15 +51,17 @@ def load_data():
         axis=1
     )
 
+    merged["primary_loc"] = merged["primary_loc"].fillna(merged["primary_loc_y"])
+    merged["primary_loc"] = merged["primary_loc"].fillna(merged["locality"])
+    merged["primary_loc"] = merged["primary_loc"].fillna(merged["Borough"])
+    merged["primary_loc"] = merged["primary_loc"].fillna("Unknown")
+
     merged["search_blob"] = (
         merged["title"].fillna("") + " " +
         merged["description"].fillna("") + " " +
         merged["Topical Theme"].fillna("") + " " +
         merged["Activity Type"].fillna("") + " " +
-        merged["primary_loc"].fillna("") + " " +
-        merged["primary_loc_y"].fillna("") + " " +
-        merged["locality"].fillna("") + " " +
-        merged["Borough"].fillna("")
+        merged["primary_loc"].fillna("")
     ).str.lower()
 
     return merged
@@ -156,7 +158,7 @@ if st.button("Explore"):
             with st.container(border=True):
                 st.markdown(f"### {row.get('title', 'Untitled Event')}")
                 st.markdown(f"**Organization:** {row.get('org_title', 'Unknown')}")
-                location = row.get('primary_loc') or row.get('primary_loc_y') or row.get('locality') or row.get('Borough') or "Unknown"
+                location = row.get('primary_loc') or "Unknown"
                 st.markdown(f"\U0001F4CD **Location:** {location}")
                 st.markdown(f"\U0001F4C5 **Date:** {row.get('start_date_date', 'N/A')}")
                 tags = [row.get('Topical Theme', ''), row.get('Effort Estimate', ''), row.get('Mood/Intent', '')]
@@ -208,6 +210,7 @@ if st.button("Explore"):
         st.warning("Please enter something you'd like to help with.")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
+
 
 
 
