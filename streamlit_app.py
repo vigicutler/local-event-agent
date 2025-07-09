@@ -61,29 +61,23 @@ final_df = load_data()
 vectorizer = TfidfVectorizer(stop_words='english')
 tfidf_matrix = vectorizer.fit_transform(final_df["search_blob"])
 
-# === Feedback Fallback Setup ===
 def ensure_feedback_csv():
     try:
         if not os.path.exists(FEEDBACK_CSV):
             pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"]).to_csv(FEEDBACK_CSV, index=False)
         with open(FEEDBACK_CSV, 'a'): pass
         st.session_state.feedback_fallback = False
-    except Exception as e:
+    except Exception:
         st.session_state.feedback_fallback = True
         st.session_state.feedback_memory = pd.DataFrame([
             {"user": "vigi", "event_id": "evt_park", "rating": 5, "comment": "Love park events!", "timestamp": datetime.utcnow()},
-            {"user": "juan", "event_id": "evt_nature", "rating": 4, "comment": "Educational and relaxing.", "timestamp": datetime.utcnow()},
-            {"user": "bruce", "event_id": "evt_animals", "rating": 5, "comment": "Great for animal lovers!", "timestamp": datetime.utcnow()},
-            {"user": "ana", "event_id": "evt_art_kids", "rating": 4, "comment": "Loved the creative activities.", "timestamp": datetime.utcnow()},
-            {"user": "andy", "event_id": "evt_tech_music", "rating": 5, "comment": "Really cool tech + music combo.", "timestamp": datetime.utcnow()}
+            {"user": "juan", "event_id": "evt_nature", "rating": 4, "comment": "Educational and relaxing.", "timestamp": datetime.utcnow()}
         ])
         st.warning("⚠️ Feedback fallback mode active. Feedback will not be saved permanently.")
         st.info("💡 Feedback fallback set to memory.")
 
 ensure_feedback_csv()
 
-
-# === Login & Search ===
 if "user" not in st.session_state:
     with st.form("login_form"):
         st.header("🔐 Login")
@@ -120,6 +114,10 @@ else:
     if mood != "(no preference)":
         results = results[results["Mood/Intent"] == mood]
 
+    show_all = st.checkbox("👀 Explore all events")
+    if show_all:
+        results = final_df.head(100)
+
     st.markdown(f"🔍 Showing {len(results)} matching events")
 
     for i, row in results.iterrows():
@@ -151,7 +149,6 @@ else:
                     st.session_state.feedback_memory = pd.concat([st.session_state.feedback_memory, pd.DataFrame([feedback])], ignore_index=True)
                     st.warning("⚠️ Feedback stored in memory only.")
 
-        # Community Rating Summary (simple)
         ratings_df = None
         try:
             ratings_df = pd.read_csv(FEEDBACK_CSV)
@@ -167,7 +164,6 @@ else:
 
     st.markdown("---")
     st.button("🔓 Log out", on_click=lambda: st.session_state.pop("user"))
-
 
 
 
