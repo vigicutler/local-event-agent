@@ -96,6 +96,21 @@ def get_connection():
 conn = get_connection()
 c = conn.cursor()
 
+# === CSV Backup Load into SQLite if Empty ===
+def restore_from_csv_if_needed():
+    c.execute("SELECT COUNT(*) FROM feedback")
+    if c.fetchone()[0] == 0 and os.path.exists(FEEDBACK_CSV):
+        try:
+            df = pd.read_csv(FEEDBACK_CSV)
+            for _, row in df.iterrows():
+                c.execute("REPLACE INTO feedback (user, event_id, rating, comment, timestamp) VALUES (?, ?, ?, ?, ?)",
+                          (row["user"], row["event_id"], row["rating"], row["comment"], row["timestamp"]))
+            conn.commit()
+        except Exception as e:
+            st.error(f"Error restoring feedback from CSV: {e}")
+
+restore_from_csv_if_needed()
+
 # === CSV Backup Save ===
 def save_to_csv(user, event_id, rating, comment):
     try:
@@ -105,7 +120,7 @@ def save_to_csv(user, event_id, rating, comment):
             df = pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"])
         timestamp = datetime.utcnow().isoformat()
         new_row = pd.DataFrame([[user, event_id, rating, comment, timestamp]], columns=df.columns)
-        df = df[df["user"] != user]  # remove old rating by user if any
+        df = df[~((df["user"] == user) & (df["event_id"] == event_id))]  # Remove any previous feedback
         df = pd.concat([df, new_row], ignore_index=True)
         df.to_csv(FEEDBACK_CSV, index=False)
     except Exception as e:
@@ -213,11 +228,11 @@ if st.button("Explore"):
                         conn.commit()
                         save_to_csv(st.session_state.user, event_id, rating, comment)
                         st.success("Feedback submitted!")
-
     else:
         st.warning("Please enter something you'd like to help with.")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
+
 
 
 
