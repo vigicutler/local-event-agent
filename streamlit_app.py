@@ -110,6 +110,7 @@ def store_user_feedback(user, event_id, rating, comment):
         df = pd.concat([df, pd.DataFrame([{"user": user, "event_id": event_id, "rating": rating, "comment": comment, "timestamp": timestamp}])], ignore_index=True)
     save_feedback(df)
 
+
 def get_user_feedback(user, event_id):
     df = load_feedback()
     row = df[(df.user == user) & (df.event_id == event_id)]
@@ -186,14 +187,15 @@ if st.button("Explore"):
                 st.markdown(f"🏷️ {tag_str}")
                 st.markdown(f"📝 {row.get('short_description', '')}")
 
-                event_id = hashlib.md5((row.get("title", "") + row.get("description", "")).encode()).hexdigest()
+                event_unique_str = row.get("title", "") + row.get("start_date_date_y", "") + row.get("org_title_y", "")
+                event_id = hashlib.md5(event_unique_str.encode()).hexdigest()
 
                 avg_rating = get_event_average_rating(event_id)
                 if avg_rating is not None:
                     st.markdown(f"⭐ **Community Rating:** {avg_rating} / 5")
 
                 user_rating, user_comment = get_user_feedback(st.session_state.user, event_id)
-                initial_rating = user_rating if user_rating else 3
+                initial_rating = user_rating if user_rating is not None else 3
 
                 if user_rating is not None:
                     st.markdown(f"🧠 _You’ve rated this {user_rating} stars._")
@@ -204,10 +206,12 @@ if st.button("Explore"):
                     if st.form_submit_button("Submit Feedback"):
                         store_user_feedback(st.session_state.user, event_id, rating, comment)
                         st.success("Feedback submitted!")
+                        st.experimental_rerun()
     else:
         st.warning("Please enter something you'd like to help with.")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
+
 
 
 
