@@ -84,13 +84,17 @@ tfidf_matrix = vectorizer.fit_transform(final_df["search_blob"])
 # === Database ===
 conn = sqlite3.connect("feedback.db")
 c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS feedback (user TEXT, event_id TEXT, rating INTEGER, comment TEXT, timestamp TEXT)''')
+c.execute('''CREATE TABLE IF NOT EXISTS feedback (user TEXT, event_id TEXT, rating INTEGER, comment TEXT, timestamp TEXT, PRIMARY KEY (user, event_id))''')
 
 # === Community Ratings ===
 def get_average_rating(event_id):
     c.execute("SELECT AVG(rating) FROM feedback WHERE event_id=?", (event_id,))
     avg = c.fetchone()[0]
     return round(avg, 2) if avg is not None else None
+
+def get_user_feedback(user, event_id):
+    c.execute("SELECT rating, comment FROM feedback WHERE user=? AND event_id=?", (user, event_id))
+    return c.fetchone()
 
 # === Fuzzy Match ===
 def get_top_matches(query, top_n=50):
@@ -171,11 +175,15 @@ if st.button("Explore"):
                 if avg_rating:
                     st.markdown(f"⭐ **Community Rating:** {avg_rating} / 5")
 
+                user_feedback = get_user_feedback(st.session_state.user, event_id)
+                initial_rating = user_feedback[0] if user_feedback else 3
+                initial_comment = user_feedback[1] if user_feedback else ""
+
                 with st.form(key=f"form_{event_id}"):
-                    rating = st.slider("Rate this event:", 1, 5, key=f"rating_{event_id}")
-                    comment = st.text_input("Leave feedback:", key=f"comment_{event_id}")
+                    rating = st.slider("Rate this event:", 1, 5, value=initial_rating, key=f"rating_{event_id}")
+                    comment = st.text_input("Leave feedback:", value=initial_comment, key=f"comment_{event_id}")
                     if st.form_submit_button("Submit Feedback"):
-                        c.execute("INSERT INTO feedback VALUES (?, ?, ?, ?, ?)",
+                        c.execute("REPLACE INTO feedback (user, event_id, rating, comment, timestamp) VALUES (?, ?, ?, ?, ?)",
                                   (st.session_state.user, event_id, rating, comment, datetime.utcnow().isoformat()))
                         conn.commit()
                         st.success("Feedback submitted!")
