@@ -56,7 +56,8 @@ def load_data():
     )
 
     location_cols = ["primary_loc", "primary_loc_y", "locality", "Borough", "City", "Postcode", "Location Name", "Street Address"]
-    merged["primary_loc"] = merged[location_cols].bfill(axis=1).iloc[:, 0].fillna("Unknown")
+    existing_cols = [col for col in location_cols if col in merged.columns]
+    merged["primary_loc"] = merged[existing_cols].bfill(axis=1).iloc[:, 0].fillna("Unknown")
 
     merged["search_blob"] = (
         merged["title"].fillna("") + " " +
