@@ -20,7 +20,6 @@ SYNONYM_MAP = {
     "dogs": ["dogs", "pets", "canines", "puppies", "animal care"]
 }
 
-# === Load Event Data ===
 @st.cache_data
 def load_data():
     enriched = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
@@ -86,7 +85,6 @@ def load_data():
 
 final_df = load_data()
 
-# === TF-IDF Setup ===
 vectorizer = TfidfVectorizer(stop_words='english')
 tfidf_matrix = vectorizer.fit_transform(final_df["search_blob"])
 
@@ -96,7 +94,7 @@ def ensure_feedback_csv():
         if not os.path.exists(FEEDBACK_CSV):
             pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"]).to_csv(FEEDBACK_CSV, index=False)
         with open(FEEDBACK_CSV, 'a'): pass
-    except Exception as e:
+    except Exception:
         st.session_state.feedback_memory = pd.DataFrame([
             {"user": "vigi",  "event_id": "evt_park",   "rating": 5, "comment": "Love park events!", "timestamp": datetime.utcnow()},
             {"user": "juan",  "event_id": "evt_nature", "rating": 4, "comment": "Educational and relaxing.", "timestamp": datetime.utcnow()},
@@ -107,96 +105,6 @@ def ensure_feedback_csv():
         st.warning("⚠️ Feedback is temporarily stored in memory. Changes won't persist between sessions.")
 
 ensure_feedback_csv()
-
-# === Feedback Helpers ===
-def load_feedback():
-    try:
-        return pd.read_csv(FEEDBACK_CSV)
-    except:
-        return st.session_state.get("feedback_memory", pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"]))
-
-def save_feedback(df):
-    try:
-        df.to_csv(FEEDBACK_CSV, index=False)
-    except:
-        st.session_state.feedback_memory = df
-
-def store_user_feedback(user, event_id, rating, comment):
-    df = load_feedback()
-    timestamp = datetime.utcnow().isoformat()
-    idx = df[(df.user == user) & (df.event_id == event_id)].index
-    if len(idx):
-        df.loc[idx, ["rating", "comment", "timestamp"]] = [rating, comment, timestamp]
-    else:
-        df = pd.concat([df, pd.DataFrame([{"user": user, "event_id": event_id, "rating": rating, "comment": comment, "timestamp": timestamp}])], ignore_index=True)
-    save_feedback(df)
-
-def get_user_feedback(user, event_id):
-    df = load_feedback()
-    row = df[(df.user == user) & (df.event_id == event_id)]
-    if not row.empty:
-        return int(row.iloc[0].rating), row.iloc[0].comment
-    return None, ""
-
-def get_event_average_rating(event_id):
-    df = load_feedback()
-    ratings = df[df.event_id == event_id]["rating"]
-    return round(ratings.mean(), 2) if not ratings.empty else None
-
-def get_event_rating_count(event_id):
-    df = load_feedback()
-    return df[df.event_id == event_id].shape[0]
-
-def get_user_history(user):
-    return load_feedback()[load_feedback().user == user]
-
-def recommend_similar_events(user, top_n=5):
-    history = get_user_history(user)
-    if history.empty:
-        return pd.DataFrame()
-    rated_events = final_df.copy()
-    rated_events["event_id"] = rated_events.apply(lambda row: hashlib.md5((str(row.get("title", "")) + str(row.get("description", ""))).encode()).hexdigest(), axis=1)
-    joined = pd.merge(history, rated_events, on="event_id")
-    if joined.empty:
-        return pd.DataFrame()
-    liked = joined[joined.rating >= 4]
-    if liked.empty:
-        return pd.DataFrame()
-    liked_vec = vectorizer.transform(liked["search_blob"])
-    sim_scores = cosine_similarity(liked_vec, tfidf_matrix).mean(axis=0)
-    indices = sim_scores.argsort()[-top_n:][::-1]
-    return final_df.iloc[indices]
-
-# === Match (Improved) ===
-def keyword_filter(df, keyword):
-    keyword = keyword.lower()
-    return df[
-        df["Topical Theme"].str.lower().str.contains(keyword) |
-        df["Activity Type"].str.lower().str.contains(keyword) |
-        df["description"].str.lower().str.contains(keyword)
-    ]
-
-def get_top_matches(query, top_n=50):
-    expanded_terms = [query.lower()]
-    for key, synonyms in SYNONYM_MAP.items():
-        if key in query.lower():
-            expanded_terms += synonyms
-    expanded_query = " ".join(expanded_terms)
-
-    keyword_filtered = keyword_filter(final_df, query)
-    query_vec = vectorizer.transform([expanded_query])
-    similarity_scores = cosine_similarity(query_vec, tfidf_matrix).flatten()
-    top_indices = similarity_scores.argsort()[-top_n:][::-1]
-    tfidf_filtered = final_df.iloc[top_indices].copy()
-    tfidf_filtered["relevance"] = similarity_scores[top_indices]
-
-    combined = pd.concat([keyword_filtered, tfidf_filtered]).drop_duplicates().head(top_n)
-    return combined
-
-# === Streamlit UI ===
-st.set_page_config(page_title="🌱 NYC Community Event Agent")
-st.title("🌱 NYC Community Event Agent")
-st.markdown("Choose how you'd like to help and find meaningful events near you.")
 
 if "user" not in st.session_state:
     st.session_state.user = "Guest"
@@ -210,58 +118,90 @@ with st.sidebar:
     if st.button("Logout"):
         st.session_state.user = "Guest"
 
-intent_input = st.text_input("🙋‍♀️ How can I help?", placeholder="e.g. help with dogs, teach kids")
+st.set_page_config(page_title="Local Event Agent", layout="centered")
+st.title("🌱 NYC Community Event Agent")
+st.markdown("Choose how you'd like to help and find meaningful events near you.")
+
+intent_input = st.text_input("🙋‍♀️ How can I help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
 mood_input = st.selectbox("💫 Optional — Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
 zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
+
+@st.cache_data
+def fuzzy_search(query):
+    expanded_terms = [query.lower()]
+    for key, synonyms in SYNONYM_MAP.items():
+        if key in query.lower():
+            expanded_terms += synonyms
+    expanded_query = " ".join(expanded_terms)
+    query_vec = vectorizer.transform([expanded_query])
+    similarity_scores = cosine_similarity(query_vec, tfidf_matrix).flatten()
+    top_indices = similarity_scores.argsort()[-50:][::-1]
+    results = final_df.iloc[top_indices].copy()
+    results["relevance"] = similarity_scores[top_indices]
+    return results
+
+def get_event_id(title, desc):
+    return hashlib.md5((title + desc).encode()).hexdigest()
+
+def load_feedback():
+    if os.path.exists(FEEDBACK_CSV):
+        return pd.read_csv(FEEDBACK_CSV)
+    return st.session_state.get("feedback_memory", pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"]))
+
+def save_feedback(user, event_id, rating, comment):
+    df = load_feedback()
+    df = df[~((df.user == user) & (df.event_id == event_id))]
+    new_row = pd.DataFrame([[user, event_id, rating, comment, datetime.utcnow()]], columns=df.columns)
+    df = pd.concat([df, new_row], ignore_index=True)
+    try:
+        df.to_csv(FEEDBACK_CSV, index=False)
+    except Exception:
+        st.session_state.feedback_memory = df
 
 if st.button("Explore"):
     query = intent_input.strip()
     if query:
-        results = get_top_matches(query)
+        results = fuzzy_search(query)
+
         if mood_input != "(no preference)":
             results = results[results["Mood/Intent"].str.contains(mood_input, case=False, na=False)]
-        if zipcode_input:
+
+        if zipcode_input.strip():
             results = results[results["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
 
         st.subheader(f"🔍 Found {len(results)} matching events")
 
+        feedback_df = load_feedback()
+
         for _, row in results.iterrows():
-            with st.container():
-                st.markdown(f"### {row.get('title', 'Untitled Event')}")
-                st.markdown(f"**Organization:** {row.get('org_title_y', 'Unknown')}")
-                st.markdown(f"📍 **Location:** {row.get('primary_loc', 'Unknown')}")
-                st.markdown(f"📅 **Date:** {row.get('start_date_date_y', 'N/A')}")
-                st.markdown(f"🏷️ `{row.get('Topical Theme', '')}` `{row.get('Effort Estimate', '')}` `{row.get('Mood/Intent', '')}`")
-                st.markdown(f"📝 {row.get('short_description', '')}")
+            title = row.get("title", "Untitled")
+            desc = row.get("description", "")
+            event_id = get_event_id(title, desc)
+            st.markdown(f"### {title}")
+            st.markdown(f"📍 **Location:** {row.get('primary_loc', 'Unknown')}  ")
+            st.markdown(f"📅 **Date:** {row.get('start_date_date_y', 'N/A')}")
+            st.markdown(f"📝 {row.get('short_description', '')}")
 
-                event_id = hashlib.md5((row.get("title", "") + row.get("description", "")).encode()).hexdigest()
-                avg_rating = get_event_average_rating(event_id)
-                count = get_event_rating_count(event_id)
-                if avg_rating is not None:
-                    st.markdown(f"⭐ **Community Rating:** {avg_rating} / 5 ({count} ratings)")
+            event_feedback = feedback_df[feedback_df.event_id == event_id]
+            avg_rating = event_feedback["rating"].mean() if not event_feedback.empty else None
+            if avg_rating:
+                st.markdown(f"⭐ **Community Rating:** {round(avg_rating, 2)} / 5")
 
-                user_rating, user_comment = get_user_feedback(st.session_state.user, event_id)
-                with st.form(key=f"form_{event_id}_{st.session_state.user}"):
-                    rating = st.slider("Rate this event:", 1, 5, value=user_rating or 3)
-                    comment = st.text_input("Leave feedback:", value=user_comment)
-                    if st.form_submit_button("Submit Feedback"):
-                        store_user_feedback(st.session_state.user, event_id, rating, comment)
-                        st.success("✅ Feedback submitted and saved.")
+            user_row = feedback_df[(feedback_df.user == st.session_state.user) & (feedback_df.event_id == event_id)]
+            initial_rating = int(user_row["rating"].iloc[0]) if not user_row.empty else 3
+            initial_comment = user_row["comment"].iloc[0] if not user_row.empty else ""
 
-        recs = recommend_similar_events(st.session_state.user)
-        if not recs.empty:
-            st.markdown("---")
-            st.subheader("🎯 Recommended Events Based on Your Ratings")
-            for _, row in recs.iterrows():
-                st.markdown(f"- **{row.get('title')}** ({row.get('primary_loc', 'Unknown')})")
-
-        history = get_user_history(st.session_state.user)
-        if not history.empty:
-            st.markdown("---")
-            st.subheader("📝 Your Feedback History")
-            st.dataframe(history.sort_values("timestamp", ascending=False).reset_index(drop=True))
+            with st.form(key=f"form_{event_id}"):
+                rating = st.slider("Rate this event:", 1, 5, value=initial_rating)
+                comment = st.text_input("Leave feedback:", value=initial_comment)
+                if st.form_submit_button("Submit Feedback"):
+                    save_feedback(st.session_state.user, event_id, rating, comment)
+                    st.success("✅ Feedback submitted!")
     else:
-        st.warning("Please enter a topic you'd like to help with.")
+        st.warning("Please enter something you'd like to help with.")
+else:
+    st.info("Enter your interest and click **Explore** to find matching events.")
+
 
 
 
