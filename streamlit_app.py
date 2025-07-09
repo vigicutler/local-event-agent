@@ -57,6 +57,7 @@ def load_data():
         merged["Topical Theme"].fillna("") + " " +
         merged["Activity Type"].fillna("") + " " +
         merged["primary_loc"].fillna("") + " " +
+        merged["primary_loc_y"].fillna("") + " " +
         merged["locality"].fillna("") + " " +
         merged["Borough"].fillna("")
     ).str.lower()
@@ -86,7 +87,7 @@ def get_top_matches(query, top_n=50):
     return results
 
 # === SQLite Setup ===
-conn = sqlite3.connect("feedback.db")
+conn = sqlite3.connect("feedback.db", check_same_thread=False)
 c = conn.cursor()
 c.execute('''
     CREATE TABLE IF NOT EXISTS feedback (
@@ -102,26 +103,26 @@ conn.commit()
 
 # === UI ===
 st.set_page_config(page_title="Local Event Agent", layout="centered")
-st.title("🌱 NYC Community Event Agent")
+st.title("\U0001F331 NYC Community Event Agent")
 
 # --- Persistent login in sidebar ---
 with st.sidebar:
-    st.header("🔐 User Login")
+    st.header("\U0001F512 User Login")
     if 'user' not in st.session_state or not st.session_state.user:
         username = st.text_input("Enter your name:", key="login_name")
         if username:
             st.session_state.user = username
             st.success(f"Welcome, {username}!")
     else:
-        st.markdown(f"👋 Hello, **{st.session_state.user}**")
+        st.markdown(f"\U0001F44B Hello, **{st.session_state.user}**")
         if st.button("Logout"):
             del st.session_state.user
 
 st.markdown("Choose how you'd like to help and find meaningful events near you.")
 
-intent_input = st.text_input("🙋‍♀️ How can I help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
-mood_input = st.selectbox("💫 Optional — Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
-zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
+intent_input = st.text_input("\U0001F64B‍♀️ How can I help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
+mood_input = st.selectbox("\U0001F4AB Optional — Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
+zipcode_input = st.text_input("\U0001F4CD Optional — ZIP Code", placeholder="e.g. 10027")
 
 if st.button("Explore"):
     query = intent_input.strip()
@@ -149,15 +150,15 @@ if st.button("Explore"):
 
         filtered = filtered.sort_values(by="community_rating", ascending=False)
 
-        st.subheader(f"🔍 Found {len(filtered)} matching events")
+        st.subheader(f"\U0001F50D Found {len(filtered)} matching events")
 
         for _, row in filtered.iterrows():
             with st.container(border=True):
                 st.markdown(f"### {row.get('title', 'Untitled Event')}")
                 st.markdown(f"**Organization:** {row.get('org_title', 'Unknown')}")
-                location = row.get('primary_loc') or row.get('primary_loc_y') or "Unknown"
-                st.markdown(f"📍 **Location:** {location}")
-                st.markdown(f"📅 **Date:** {row.get('start_date_date', 'N/A')}")
+                location = row.get('primary_loc') or row.get('primary_loc_y') or row.get('locality') or row.get('Borough') or "Unknown"
+                st.markdown(f"\U0001F4CD **Location:** {location}")
+                st.markdown(f"\U0001F4C5 **Date:** {row.get('start_date_date', 'N/A')}")
                 tags = [row.get('Topical Theme', ''), row.get('Effort Estimate', ''), row.get('Mood/Intent', '')]
                 tag_str = " ".join([f"`{t.strip()}`" for t in tags if t])
                 st.markdown(f"🏷️ {tag_str}")
@@ -165,25 +166,27 @@ if st.button("Explore"):
                 st.markdown(f"⭐ **Community Rating:** {row['community_rating']:.1f}/5" if row['community_rating'] > 0 else "⭐ No ratings yet")
 
                 if st.session_state.get("user"):
-                    rating = st.slider(f"Rate this event:", min_value=1, max_value=5, key=f"rating_{row.name}")
-                    feedback = st.text_area("Tell us what you thought:", key=f"feedback_{row.name}")
-                    if st.button("Submit Feedback", key=f"submit_{row.name}"):
-                        timestamp = datetime.now().isoformat()
-                        c.execute('''
-                            INSERT INTO feedback (user, event_id, event_name, rating, feedback, timestamp)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        ''', (
-                            st.session_state.user,
-                            row["description"],
-                            row.get("title", "Untitled Event"),
-                            rating,
-                            feedback,
-                            timestamp
-                        ))
-                        conn.commit()
-                        st.success("✅ Feedback submitted!")
+                    with st.form(key=f"feedback_form_{row.name}"):
+                        rating = st.slider("Rate this event:", min_value=1, max_value=5, key=f"rating_{row.name}")
+                        feedback = st.text_area("Tell us what you thought:", key=f"feedback_{row.name}")
+                        submit = st.form_submit_button("Submit Feedback")
+                        if submit:
+                            timestamp = datetime.now().isoformat()
+                            c.execute('''
+                                INSERT INTO feedback (user, event_id, event_name, rating, feedback, timestamp)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            ''', (
+                                st.session_state.user,
+                                row["description"],
+                                row.get("title", "Untitled Event"),
+                                rating,
+                                feedback,
+                                timestamp
+                            ))
+                            conn.commit()
+                            st.success("✅ Feedback submitted!")
                 else:
-                    st.info("🔐 Please log in from the sidebar to leave feedback.")
+                    st.info("\U0001F512 Please log in from the sidebar to leave feedback.")
 
         if st.session_state.get("user"):
             user_feedback = pd.read_sql_query(
@@ -197,7 +200,7 @@ if st.button("Explore"):
                     for _, fb_row in user_feedback.iterrows():
                         st.markdown(f"- **{fb_row['event_name']}**: {fb_row['rating']}⭐ — {fb_row['feedback']}")
 
-            with st.sidebar.expander("🔍 Debug Info"):
+            with st.sidebar.expander("\U0001F50D Debug Info"):
                 st.write("Logged in user:", st.session_state.get("user", "None"))
                 st.write("Filtered Data Columns:", filtered.columns.tolist())
 
