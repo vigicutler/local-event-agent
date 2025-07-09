@@ -55,22 +55,22 @@ def load_data():
         axis=1
     )
 
-    location_cols = ["primary_loc", "primary_loc_y", "locality", "Borough", "City", "Postcode", "Location Name", "Street Address"]
+    location_cols = [
+        "primary_loc", "primary_loc_y", "locality", "Borough", "City", "Postcode",
+        "Location Name", "Street Address", "Address 1", "Address 2"
+    ]
     existing_cols = [col for col in location_cols if col in merged.columns]
-    if existing_cols:
-        merged["primary_loc"] = merged[existing_cols].bfill(axis=1).iloc[:, 0].fillna("Unknown")
-    else:
-        merged["primary_loc"] = "Unknown"
+    merged["primary_loc"] = merged[existing_cols].bfill(axis=1).iloc[:, 0].fillna("Unknown")
 
     title_col = "title" if "title" in merged.columns else "title_clean"
     merged["search_blob"] = (
         merged[title_col].fillna("") + " " +
         merged["description"].fillna("") + " " +
-        merged["Topical Theme"].fillna("") + " " +
-        merged["Activity Type"].fillna("") + " " +
+        merged.get("Topical Theme", pd.Series("", index=merged.index)).fillna("") + " " +
+        merged.get("Activity Type", pd.Series("", index=merged.index)).fillna("") + " " +
         merged["primary_loc"].fillna("") + " " +
-        merged["Postcode"].fillna("") + " " +
-        merged["City"].fillna("")
+        merged.get("Postcode", pd.Series("", index=merged.index)).fillna("") + " " +
+        merged.get("City", pd.Series("", index=merged.index)).fillna("")
     ).str.lower()
 
     return merged
@@ -93,8 +93,8 @@ def get_top_matches(query, top_n=50):
     top_indices = similarity_scores.argsort()[-top_n:][::-1]
     results = final_df.iloc[top_indices].copy()
     results["relevance"] = similarity_scores[top_indices]
-    results["relevance"] += results.get("title", results.get("title_clean", "")).str.contains(query, case=False, na=False).astype(int) * 0.2
-    results["relevance"] += results["Topical Theme"].str.contains(query, case=False, na=False).astype(int) * 0.2
+    results["relevance"] += results.get("title", results.get("title_clean", "")).astype(str).str.contains(query, case=False, na=False).astype(int) * 0.2
+    results["relevance"] += results.get("Topical Theme", pd.Series("", index=results.index)).astype(str).str.contains(query, case=False, na=False).astype(int) * 0.2
     return results
 
 # === User Session ===
@@ -124,7 +124,6 @@ if st.button("Explore"):
     if query:
         filtered = get_top_matches(query)
 
-        # Filter: Mood
         if mood_input != "(no preference)":
             def mood_match(row):
                 mood_tag = str(row.get("Mood/Intent", "")).lower()
@@ -135,12 +134,10 @@ if st.button("Explore"):
                 )
             filtered = filtered[filtered.apply(mood_match, axis=1)]
 
-        # Filter: ZIP
         if zipcode_input.strip():
-            filtered = filtered[filtered["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
+            filtered = filtered[filtered.get("Postcode", pd.Series("", index=filtered.index)).astype(str).str.startswith(zipcode_input.strip())]
 
         filtered = filtered.sort_values(by="relevance", ascending=False)
-
         st.subheader(f"🔍 Found {len(filtered)} matching events")
 
         if len(filtered) == 0:
@@ -176,6 +173,7 @@ if st.button("Explore"):
         st.warning("Please enter something you'd like to help with.")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
+
 
 
 
