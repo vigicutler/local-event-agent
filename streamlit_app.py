@@ -103,26 +103,18 @@ def save_feedback(feedback_df):
 def store_user_feedback(user, event_id, rating, comment):
     feedback_df = load_feedback()
     timestamp = datetime.utcnow().isoformat()
-
     existing = feedback_df[(feedback_df["user"] == user) & (feedback_df["event_id"] == event_id)]
     if not existing.empty:
         feedback_df.loc[existing.index, ["rating", "comment", "timestamp"]] = [rating, comment, timestamp]
     else:
-        feedback_df = pd.concat([feedback_df, pd.DataFrame([{
-            "user": user,
-            "event_id": event_id,
-            "rating": rating,
-            "comment": comment,
-            "timestamp": timestamp
-        }])], ignore_index=True)
-
+        feedback_df = pd.concat([feedback_df, pd.DataFrame([{ "user": user, "event_id": event_id, "rating": rating, "comment": comment, "timestamp": timestamp }])], ignore_index=True)
     save_feedback(feedback_df)
 
 def get_user_feedback(user, event_id):
     feedback_df = load_feedback()
     match = feedback_df[(feedback_df["user"] == user) & (feedback_df["event_id"] == event_id)]
     if not match.empty:
-        return match.iloc[0]["rating"], match.iloc[0]["comment"]
+        return int(match.iloc[0]["rating"]), match.iloc[0]["comment"]
     return None, ""
 
 def get_event_average_rating(event_id):
@@ -204,6 +196,7 @@ if st.button("Explore"):
                 st.markdown(f"📝 {row.get('short_description', '')}")
 
                 event_id = hashlib.md5((row.get("title", "") + row.get("description", "")).encode()).hexdigest()
+
                 avg_rating = get_event_average_rating(event_id)
                 if avg_rating is not None:
                     st.markdown(f"⭐ **Community Rating:** {avg_rating} / 5")
@@ -221,6 +214,7 @@ if st.button("Explore"):
         st.warning("Please enter something you'd like to help with.")
 else:
     st.info("Enter your interest and click **Explore** to find matching events.")
+
 
 
 
