@@ -63,7 +63,7 @@ def load_data():
         merged["primary_loc"] = "Unknown"
 
     merged["search_blob"] = (
-        merged["title"].fillna("") + " " +
+        merged.get("title", merged.get("title_clean", "")).fillna("") + " " +
         merged["description"].fillna("") + " " +
         merged["Topical Theme"].fillna("") + " " +
         merged["Activity Type"].fillna("") + " " +
@@ -92,7 +92,7 @@ def get_top_matches(query, top_n=50):
     top_indices = similarity_scores.argsort()[-top_n:][::-1]
     results = final_df.iloc[top_indices].copy()
     results["relevance"] = similarity_scores[top_indices]
-    results["relevance"] += results["title"].str.contains(query, case=False, na=False).astype(int) * 0.2
+    results["relevance"] += results.get("title", results.get("title_clean", "")).str.contains(query, case=False, na=False).astype(int) * 0.2
     results["relevance"] += results["Topical Theme"].str.contains(query, case=False, na=False).astype(int) * 0.2
     return results
 
