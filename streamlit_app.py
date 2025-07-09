@@ -53,8 +53,8 @@ def load_data():
         return ""
 
     merged["Mood/Intent"] = merged.apply(
-        lambda row: row["Mood/Intent"] if pd.notna(row["Mood/Intent"]) and row["Mood/Intent"].strip() != ""
-        else infer_mood(row["description"]),
+        lambda row: row["Mood/Intent"] if pd.notna(row.get("Mood/Intent")) and row["Mood/Intent"].strip() != ""
+        else infer_mood(row.get("description", "")),
         axis=1
     )
 
@@ -66,14 +66,19 @@ def load_data():
     merged["primary_loc"] = merged[existing_cols].bfill(axis=1).iloc[:, 0].fillna("Unknown")
 
     title_col = "title" if "title" in merged.columns else "title_clean"
+
+    for col in ["description", "Topical Theme", "Activity Type", "primary_loc", "Postcode", "City"]:
+        if col not in merged.columns:
+            merged[col] = ""
+
     merged["search_blob"] = (
         merged[title_col].fillna("").astype(str) + " " +
         merged["description"].fillna("").astype(str) + " " +
-        merged.get("Topical Theme", pd.Series([""] * len(merged))).fillna("").astype(str) + " " +
-        merged.get("Activity Type", pd.Series([""] * len(merged))).fillna("").astype(str) + " " +
+        merged["Topical Theme"].fillna("").astype(str) + " " +
+        merged["Activity Type"].fillna("").astype(str) + " " +
         merged["primary_loc"].fillna("").astype(str) + " " +
-        merged.get("Postcode", pd.Series([""] * len(merged))).fillna("").astype(str) + " " +
-        merged.get("City", pd.Series([""] * len(merged))).fillna("").astype(str)
+        merged["Postcode"].fillna("").astype(str) + " " +
+        merged["City"].fillna("").astype(str)
     ).str.lower()
 
     return merged
@@ -84,57 +89,54 @@ final_df = load_data()
 vectorizer = TfidfVectorizer(stop_words='english')
 tfidf_matrix = vectorizer.fit_transform(final_df["search_blob"])
 
-# === Singleton DB Connection ===
-@st.cache_resource
-def get_connection():
-    conn = sqlite3.connect("feedback.db", check_same_thread=False)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS feedback (user TEXT, event_id TEXT, rating INTEGER, comment TEXT, timestamp TEXT, PRIMARY KEY (user, event_id))''')
-    conn.commit()
-    return conn
+# === Ensure Feedback CSV Exists ===
+if not os.path.exists(FEEDBACK_CSV):
+    pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"]).to_csv(FEEDBACK_CSV, index=False)
 
-conn = get_connection()
-c = conn.cursor()
+# === Feedback Storage Functions ===
+def load_feedback():
+    return pd.read_csv(FEEDBACK_CSV)
 
-# === CSV Backup Load into SQLite if Empty ===
-def restore_from_csv_if_needed():
-    c.execute("SELECT COUNT(*) FROM feedback")
-    if c.fetchone()[0] == 0 and os.path.exists(FEEDBACK_CSV):
-        try:
-            df = pd.read_csv(FEEDBACK_CSV)
-            for _, row in df.iterrows():
-                c.execute("REPLACE INTO feedback (user, event_id, rating, comment, timestamp) VALUES (?, ?, ?, ?, ?)",
-                          (row["user"], row["event_id"], row["rating"], row["comment"], row["timestamp"]))
-            conn.commit()
-        except Exception as e:
-            st.error(f"Error restoring feedback from CSV: {e}")
+def save_feedback(feedback_df):
+    feedback_df.to_csv(FEEDBACK_CSV, index=False)
 
-restore_from_csv_if_needed()
+def store_user_feedback(user, event_id, rating, comment):
+    feedback_df = load_feedback()
+    timestamp = datetime.utcnow().isoformat()
 
-# === CSV Backup Save ===
-def save_to_csv(user, event_id, rating, comment):
-    try:
-        if os.path.exists(FEEDBACK_CSV):
-            df = pd.read_csv(FEEDBACK_CSV)
-        else:
-            df = pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"])
-        timestamp = datetime.utcnow().isoformat()
-        new_row = pd.DataFrame([[user, event_id, rating, comment, timestamp]], columns=df.columns)
-        df = df[~((df["user"] == user) & (df["event_id"] == event_id))]  # Remove any previous feedback
-        df = pd.concat([df, new_row], ignore_index=True)
-        df.to_csv(FEEDBACK_CSV, index=False)
-    except Exception as e:
-        st.error(f"CSV backup failed: {e}")
+    existing = feedback_df[(feedback_df["user"] == user) & (feedback_df["event_id"] == event_id)]
+    if not existing.empty:
+        feedback_df.loc[existing.index, ["rating", "comment", "timestamp"]] = [rating, comment, timestamp]
+    else:
+        feedback_df = pd.concat([feedback_df, pd.DataFrame([{
+            "user": user,
+            "event_id": event_id,
+            "rating": rating,
+            "comment": comment,
+            "timestamp": timestamp
+        }])], ignore_index=True)
 
-# === Community Ratings ===
-def get_average_rating(event_id):
-    c.execute("SELECT AVG(rating) FROM feedback WHERE event_id=?", (event_id,))
-    avg = c.fetchone()[0]
-    return round(avg, 2) if avg is not None else None
+    save_feedback(feedback_df)
 
 def get_user_feedback(user, event_id):
-    c.execute("SELECT rating, comment FROM feedback WHERE user=? AND event_id=?", (user, event_id))
-    return c.fetchone()
+    feedback_df = load_feedback()
+    match = feedback_df[(feedback_df["user"] == user) & (feedback_df["event_id"] == event_id)]
+    if not match.empty:
+        return match.iloc[0]["rating"], match.iloc[0]["comment"]
+    return None, ""
+
+def get_event_average_rating(event_id):
+    feedback_df = load_feedback()
+    ratings = feedback_df[feedback_df["event_id"] == event_id]["rating"]
+    return round(ratings.mean(), 2) if not ratings.empty else None
+
+# === Utility Functions for Recommendation (placeholder for now) ===
+def compute_similarity(df, target_blob):
+    tfidf = TfidfVectorizer(stop_words="english")
+    tfidf_matrix = tfidf.fit_transform(df["search_blob"])
+    target_vector = tfidf.transform([target_blob])
+    cosine_sim = cosine_similarity(target_vector, tfidf_matrix).flatten()
+    return cosine_sim
 
 # === Fuzzy Match ===
 def get_top_matches(query, top_n=50):
@@ -152,86 +154,6 @@ def get_top_matches(query, top_n=50):
     results["relevance"] += results.get("title", results.get("title_clean", "")).astype(str).str.contains(query, case=False, na=False).astype(int) * 0.2
     results["relevance"] += results.get("Topical Theme", pd.Series("", index=results.index)).astype(str).str.contains(query, case=False, na=False).astype(int) * 0.2
     return results
-
-# === User Session ===
-if "user" not in st.session_state:
-    st.session_state.user = "Guest"
-
-with st.sidebar:
-    st.subheader("🔐 Login")
-    username = st.text_input("Username", value=st.session_state.user)
-    if st.button("Login"):
-        st.session_state.user = username
-    st.write(f"You are logged in as: `{st.session_state.user}`")
-    if st.button("Logout"):
-        st.session_state.user = "Guest"
-
-# === UI ===
-st.set_page_config(page_title="Local Event Agent", layout="centered")
-st.title("🌱 NYC Community Event Agent")
-st.markdown("Choose how you'd like to help and find meaningful events near you.")
-
-intent_input = st.text_input("🙋‍♀️ How can I help?", placeholder="e.g. help with homelessness, teach kids, plant trees")
-mood_input = st.selectbox("💫 Optional — Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
-zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
-
-if st.button("Explore"):
-    query = intent_input.strip()
-    if query:
-        filtered = get_top_matches(query)
-
-        if mood_input != "(no preference)":
-            def mood_match(row):
-                mood_tag = str(row.get("Mood/Intent", "")).lower()
-                desc = str(row.get("description", "")).lower()
-                return (
-                    fuzz.partial_ratio(mood_tag, mood_input.lower()) > 60 or
-                    mood_input.lower() in desc
-                )
-            filtered = filtered[filtered.apply(mood_match, axis=1)]
-
-        if zipcode_input.strip():
-            filtered = filtered[filtered.get("Postcode", pd.Series("", index=filtered.index)).astype(str).str.startswith(zipcode_input.strip())]
-
-        filtered = filtered.sort_values(by="relevance", ascending=False)
-        st.subheader(f"🔍 Found {len(filtered)} matching events")
-
-        if len(filtered) == 0:
-            st.info("No matching events found. Try another keyword like 'clean', 'educate', or 'connect'.")
-
-        for _, row in filtered.iterrows():
-            with st.container(border=True):
-                st.markdown(f"### {row.get('title', 'Untitled Event')}")
-                st.markdown(f"**Organization:** {row.get('org_title_y', 'Unknown')}")
-                st.markdown(f"📍 **Location:** {row.get('primary_loc', 'Unknown')}")
-                st.markdown(f"📅 **Date:** {row.get('start_date_date_y', 'N/A')}")
-                tags = [row.get('Topical Theme', ''), row.get('Effort Estimate', ''), row.get('Mood/Intent', '')]
-                tag_str = " ".join([f"`{t.strip()}`" for t in tags if t])
-                st.markdown(f"🏷️ {tag_str}")
-                st.markdown(f"📝 {row.get('short_description', '')}")
-
-                event_id = hashlib.md5((row.get("title", "") + row.get("description", "")).encode()).hexdigest()
-                avg_rating = get_average_rating(event_id)
-                if avg_rating is not None:
-                    st.markdown(f"⭐ **Community Rating:** {avg_rating} / 5")
-
-                user_feedback = get_user_feedback(st.session_state.user, event_id)
-                initial_rating = user_feedback[0] if user_feedback else 3
-                initial_comment = user_feedback[1] if user_feedback else ""
-
-                with st.form(key=f"form_{event_id}"):
-                    rating = st.slider("Rate this event:", 1, 5, value=initial_rating, key=f"rating_{event_id}")
-                    comment = st.text_input("Leave feedback:", value=initial_comment, key=f"comment_{event_id}")
-                    if st.form_submit_button("Submit Feedback"):
-                        c.execute("REPLACE INTO feedback (user, event_id, rating, comment, timestamp) VALUES (?, ?, ?, ?, ?)",
-                                  (st.session_state.user, event_id, rating, comment, datetime.utcnow().isoformat()))
-                        conn.commit()
-                        save_to_csv(st.session_state.user, event_id, rating, comment)
-                        st.success("Feedback submitted!")
-    else:
-        st.warning("Please enter something you'd like to help with.")
-else:
-    st.info("Enter your interest and click **Explore** to find matching events.")
 
 
 
