@@ -141,6 +141,26 @@ def get_event_rating_count(event_id):
     df = load_feedback()
     return df[df.event_id == event_id].shape[0]
 
+def get_user_history(user):
+    return load_feedback()[load_feedback().user == user]
+
+def recommend_similar_events(user, top_n=5):
+    history = get_user_history(user)
+    if history.empty:
+        return pd.DataFrame()
+    rated_events = final_df.copy()
+    rated_events["event_id"] = rated_events.apply(lambda row: hashlib.md5((str(row.get("title", "")) + str(row.get("description", ""))).encode()).hexdigest(), axis=1)
+    joined = pd.merge(history, rated_events, on="event_id")
+    if joined.empty:
+        return pd.DataFrame()
+    liked = joined[joined.rating >= 4]
+    if liked.empty:
+        return pd.DataFrame()
+    liked_vec = vectorizer.transform(liked["search_blob"])
+    sim_scores = cosine_similarity(liked_vec, tfidf_matrix).mean(axis=0)
+    indices = sim_scores.argsort()[-top_n:][::-1]
+    return final_df.iloc[indices]
+
 # === Match (Improved) ===
 def keyword_filter(df, keyword):
     keyword = keyword.lower()
@@ -221,8 +241,22 @@ if st.button("Explore"):
                     if st.form_submit_button("Submit Feedback"):
                         store_user_feedback(st.session_state.user, event_id, rating, comment)
                         st.success("✅ Feedback submitted and saved.")
+
+        recs = recommend_similar_events(st.session_state.user)
+        if not recs.empty:
+            st.markdown("---")
+            st.subheader("🎯 Recommended Events Based on Your Ratings")
+            for _, row in recs.iterrows():
+                st.markdown(f"- **{row.get('title')}** ({row.get('primary_loc', 'Unknown')})")
+
+        history = get_user_history(st.session_state.user)
+        if not history.empty:
+            st.markdown("---")
+            st.subheader("📝 Your Feedback History")
+            st.dataframe(history.sort_values("timestamp", ascending=False).reset_index(drop=True))
     else:
         st.warning("Please enter a topic you'd like to help with.")
+
 
 
 
