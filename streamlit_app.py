@@ -26,13 +26,11 @@ def load_data():
 
     enriched["description"] = enriched["description"].fillna("")
     enriched["short_description"] = enriched["description"].str.slice(0, 140) + "..."
-    raw["summary"] = raw["summary"].fillna("")
 
     merged = pd.merge(
         enriched,
         raw,
-        left_on="description",
-        right_on="summary",
+        on="title",
         how="left",
         suffixes=("", "_y")
     )
@@ -54,13 +52,11 @@ def load_data():
     )
 
     merged["search_blob"] = (
-        merged["title_y"].fillna("") + " " +
+        merged["title"].fillna("") + " " +
         merged["description"].fillna("") + " " +
         merged["Topical Theme"].fillna("") + " " +
         merged["Activity Type"].fillna("")
     ).str.lower()
-
-    merged["primary_loc_y"] = merged["primary_loc_y"].fillna(merged.get("location", "Unknown"))
 
     return merged
 
@@ -82,7 +78,7 @@ def get_top_matches(query, top_n=50):
     top_indices = similarity_scores.argsort()[-top_n:][::-1]
     results = final_df.iloc[top_indices].copy()
     results["relevance"] = similarity_scores[top_indices]
-    results["relevance"] += results["title_y"].str.contains(query, case=False, na=False).astype(int) * 0.2
+    results["relevance"] += results["title"].str.contains(query, case=False, na=False).astype(int) * 0.2
     results["relevance"] += results["Topical Theme"].str.contains(query, case=False, na=False).astype(int) * 0.2
     return results
 
@@ -152,11 +148,11 @@ if st.button("Explore"):
 
         for _, row in filtered.iterrows():
             with st.container(border=True):
-                st.markdown(f"### {row.get('title_y', 'Untitled Event')}")
-                st.markdown(f"**Organization:** {row.get('org_title_y', 'Unknown')}")
-                location = row.get('primary_loc_y') or row.get('location') or "Unknown"
+                st.markdown(f"### {row.get('title', 'Untitled Event')}")
+                st.markdown(f"**Organization:** {row.get('org_title', 'Unknown')}")
+                location = row.get('primary_loc') or row.get('primary_loc_y') or "Unknown"
                 st.markdown(f"📍 **Location:** {location}")
-                st.markdown(f"📅 **Date:** {row.get('start_date_date_y', 'N/A')}")
+                st.markdown(f"📅 **Date:** {row.get('start_date_date', 'N/A')}")
                 tags = [row.get('Topical Theme', ''), row.get('Effort Estimate', ''), row.get('Mood/Intent', '')]
                 tag_str = " ".join([f"`{t.strip()}`" for t in tags if t])
                 st.markdown(f"🏷️ {tag_str}")
@@ -173,7 +169,7 @@ if st.button("Explore"):
                     ''', (
                         st.session_state.user,
                         row["description"],
-                        row.get("title_y", "Untitled Event"),
+                        row.get("title", "Untitled Event"),
                         rating,
                         feedback,
                         timestamp
