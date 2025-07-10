@@ -96,11 +96,10 @@ else:
 st.title(f"🌱 Welcome, {st.session_state.get('user', 'Guest').capitalize()}")
 st.write("Find community events that match your goals and vibe.")
 
-with st.form("search_form"):
-    query = st.text_input("🙋‍♀️ How can I help?", "")
-    mood = st.selectbox("💫 Mood/Intent", ["(no preference)", "Reflect", "Connect", "Uplift"])
-    zip_filter = st.text_input("📍 ZIP Code (optional)", "")
-    submit_search = st.form_submit_button("🔍 Search")
+query = st.text_input("🙋‍♀️ How can I help?", "")
+mood = st.selectbox("💫 Mood/Intent", ["(no preference)", "Reflect", "Connect", "Uplift"])
+zip_filter = st.text_input("📍 ZIP Code (optional)", "")
+submit_search = st.button("🔍 Search")
 
 if submit_search:
     def expand_query(text):
@@ -166,6 +165,7 @@ if submit_search:
                 avg_rating = ev_ratings["rating"].mean()
                 count = ev_ratings.shape[0]
                 st.caption(f"⭐ Avg Rating: {avg_rating:.1f} ({count} reviews)")
+
 
 
 
