@@ -18,6 +18,8 @@ SYNONYM_MAP = {
     "dogs": ["dogs", "pets", "canines", "puppies", "animal care"]
 }
 
+PRELOADED_USERS = ["vigi", "andy", "juan", "bruce", "ana"]
+
 @st.cache_data
 def load_data():
     enriched = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
@@ -78,22 +80,29 @@ def ensure_feedback_csv():
 
 ensure_feedback_csv()
 
+# --- Sidebar Login ---
+st.sidebar.title("🧑 Login")
 if "user" not in st.session_state:
-    with st.form("login_form"):
-        st.header("🔐 Login")
-        username = st.text_input("Username")
-        submitted = st.form_submit_button("Login")
-        if submitted and username:
-            st.session_state.user = username.lower()
-            st.rerun()
+    username = st.sidebar.text_input("Enter your username", value="guest")
+    if st.sidebar.button("Login"):
+        st.session_state.user = username.lower()
+        st.experimental_rerun()
 else:
-    st.markdown(f"### 🌱 Welcome, {st.session_state.user}")
-    st.write("Find community events that match your goals and vibe.")
+    st.sidebar.markdown(f"**Logged in as:** `{st.session_state.user}`")
+    if st.sidebar.button("Logout"):
+        del st.session_state.user
+        st.experimental_rerun()
 
+st.title(f"🌱 Welcome, {st.session_state.get('user', 'Guest').capitalize()}")
+st.write("Find community events that match your goals and vibe.")
+
+with st.form("search_form"):
     query = st.text_input("🙋‍♀️ How can I help?", "")
     mood = st.selectbox("💫 Mood/Intent", ["(no preference)", "Reflect", "Connect", "Uplift"])
     zip_filter = st.text_input("📍 ZIP Code (optional)", "")
+    submit_search = st.form_submit_button("🔍 Search")
 
+if submit_search:
     def expand_query(text):
         tokens = text.lower().split()
         expanded = set(tokens)
@@ -107,16 +116,12 @@ else:
     query_vec = vectorizer.transform([query_expanded])
     cosine_sim = cosine_similarity(query_vec, tfidf_matrix).flatten()
     top_indices = cosine_sim.argsort()[::-1][:50]
-
     results = final_df.iloc[top_indices]
+
     if zip_filter:
         results = results[results["Postcode"].astype(str).str.contains(zip_filter)]
     if mood != "(no preference)":
         results = results[results["Mood/Intent"] == mood]
-
-    show_all = st.checkbox("👀 Explore all events")
-    if show_all:
-        results = final_df.head(100)
 
     st.markdown(f"🔍 Showing {len(results)} matching events")
 
@@ -132,7 +137,7 @@ else:
             submit = st.form_submit_button("Submit")
             if submit:
                 feedback = {
-                    "user": st.session_state.user,
+                    "user": st.session_state.get("user", "guest"),
                     "event_id": event_id,
                     "rating": rating,
                     "comment": comment,
@@ -162,8 +167,6 @@ else:
                 count = ev_ratings.shape[0]
                 st.caption(f"⭐ Avg Rating: {avg_rating:.1f} ({count} reviews)")
 
-    st.markdown("---")
-    st.button("🔓 Log out", on_click=lambda: st.session_state.pop("user"))
 
 
 
