@@ -38,29 +38,34 @@ def load_data():
     try:
         enriched = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
         enriched.columns = enriched.columns.str.strip()
-        enriched["description"] = enriched["description"].fillna("")
-        enriched["title"] = enriched["title"].fillna("")
-        enriched["short_description"] = enriched["description"].str.slice(0, 140) + "..."
-        enriched["title_clean"] = enriched["title"].str.strip().str.lower()
         
-        # SIMPLE search blob creation
+        # Fill NaN values with empty strings
+        enriched = enriched.fillna("")
+        
+        # Create all derived columns manually
+        short_descriptions = []
+        title_cleans = []
         search_blobs = []
-        for i in range(len(enriched)):
-            title = str(enriched.iloc[i]["title"]) if pd.notna(enriched.iloc[i]["title"]) else ""
-            desc = str(enriched.iloc[i]["description"]) if pd.notna(enriched.iloc[i]["description"]) else ""
-            search_blobs.append((title + " " + desc).lower())
-        
-        enriched["search_blob"] = search_blobs
-        
-        # Create event IDs safely
         event_ids = []
-        for i in range(len(enriched)):
-            title = str(enriched.iloc[i]["title"]) if pd.notna(enriched.iloc[i]["title"]) else ""
-            desc = str(enriched.iloc[i]["description"]) if pd.notna(enriched.iloc[i]["description"]) else ""
-            event_id = hashlib.md5((title + desc).encode()).hexdigest()
-            event_ids.append(event_id)
         
+        for i in range(len(enriched)):
+            # Get values safely
+            title = str(enriched.iloc[i]["title"])
+            description = str(enriched.iloc[i]["description"])
+            
+            # Create derived fields
+            short_descriptions.append(description[:140] + "...")
+            title_cleans.append(title.strip().lower())
+            search_blobs.append((title + " " + description).lower())
+            event_ids.append(hashlib.md5((title + description).encode()).hexdigest())
+        
+        # Assign all at once
+        enriched["description"] = enriched["description"]
+        enriched["short_description"] = short_descriptions
+        enriched["title_clean"] = title_cleans
+        enriched["search_blob"] = search_blobs
         enriched["event_id"] = event_ids
+        
         return enriched
     except FileNotFoundError:
         st.error("❌ Required CSV file 'Merged_Enriched_Events_CLUSTERED.csv' not found!")
