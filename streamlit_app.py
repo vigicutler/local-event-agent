@@ -42,20 +42,20 @@ def load_data():
         enriched["short_description"] = enriched["description"].str.slice(0, 140) + "..."
         enriched["title_clean"] = enriched["title"].str.strip().str.lower()
         
-        # Build search blob safely
+        # Build search blob safely - convert everything to string first
         enriched["search_blob"] = (
-            enriched["title"].fillna("") + " " +
-            enriched["description"].fillna("")
+            enriched["title"].fillna("").astype(str) + " " +
+            enriched["description"].fillna("").astype(str)
         ).str.lower()
         
         # Try to add optional columns if they exist
         try:
             if "Topical Theme" in enriched.columns:
-                enriched["search_blob"] = enriched["search_blob"] + " " + enriched["Topical Theme"].fillna("").str.lower()
+                enriched["search_blob"] = enriched["search_blob"] + " " + enriched["Topical Theme"].fillna("").astype(str).str.lower()
             if "Activity Type" in enriched.columns:
-                enriched["search_blob"] = enriched["search_blob"] + " " + enriched["Activity Type"].fillna("").str.lower()
+                enriched["search_blob"] = enriched["search_blob"] + " " + enriched["Activity Type"].fillna("").astype(str).str.lower()
             if "primary_loc" in enriched.columns:
-                enriched["search_blob"] = enriched["search_blob"] + " " + enriched["primary_loc"].fillna("").str.lower()
+                enriched["search_blob"] = enriched["search_blob"] + " " + enriched["primary_loc"].fillna("").astype(str).str.lower()
         except:
             pass  # If optional columns fail, continue with basic search
         
