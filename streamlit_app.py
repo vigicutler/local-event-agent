@@ -52,10 +52,15 @@ def load_data():
         
         enriched["search_blob"] = search_blobs
         
-        enriched["event_id"] = enriched.apply(
-            lambda row: hashlib.md5((str(row["title"]) + str(row["description"])).encode()).hexdigest(), 
-            axis=1
-        )
+        # Create event IDs safely
+        event_ids = []
+        for i in range(len(enriched)):
+            title = str(enriched.iloc[i]["title"]) if pd.notna(enriched.iloc[i]["title"]) else ""
+            desc = str(enriched.iloc[i]["description"]) if pd.notna(enriched.iloc[i]["description"]) else ""
+            event_id = hashlib.md5((title + desc).encode()).hexdigest()
+            event_ids.append(event_id)
+        
+        enriched["event_id"] = event_ids
         return enriched
     except FileNotFoundError:
         st.error("❌ Required CSV file 'Merged_Enriched_Events_CLUSTERED.csv' not found!")
