@@ -128,6 +128,7 @@ if st.button("Explore") and query:
     st.subheader(f"🔍 Found {len(top_results)} matching events")
 
     for i, (_, row) in enumerate(top_results.iterrows()):
+        container_key = make_widget_key("container", i)
         with st.container():
             st.markdown(f"### {row.get('title', 'Untitled Event')}")
             st.markdown(f"**Org:** {row.get('org_title', 'Unknown')} | **Date:** {row.get('start_date', 'N/A')}")
@@ -140,15 +141,12 @@ if st.button("Explore") and query:
             if avg_rating:
                 st.markdown(f"⭐ Community Rating: {avg_rating}/5")
 
-            rate_key = make_widget_key("rate", i)
-            comm_key = make_widget_key("comm", i)
-            submit_key = make_widget_key("submit", i)
-
-            rating = st.slider("Rate this event:", 1, 5, key=rate_key)
-            comment = st.text_input("Leave feedback:", key=comm_key)
-            if st.button("Submit Feedback", key=submit_key):
-                store_feedback(event_id, rating, comment)
-                st.success("✅ Thanks for the feedback!")
+            with st.form(key=make_widget_key("form", i)):
+                rating = st.slider("Rate this event:", 1, 5, key=make_widget_key("rate", i))
+                comment = st.text_input("Leave feedback:", key=make_widget_key("comm", i))
+                if st.form_submit_button("Submit Feedback"):
+                    store_feedback(event_id, rating, comment)
+                    st.success("✅ Thanks for the feedback!")
 else:
     st.info("Enter a topic like \"food\", \"kids\", \"Inwood\", etc. to explore events.")
 
