@@ -88,7 +88,8 @@ def filter_by_weather(df, tag):
 
 # === Widget Key Helper ===
 def make_unique_key(prefix, event_id, loop_idx):
-    return f"{prefix}_{event_id}_{loop_idx}"
+    safe_id = str(event_id)[:10]  # shorten hash to avoid duplication
+    return f"{prefix}_{safe_id}_{loop_idx}"
 
 # === UI ===
 query = st.text_input("👋️ How can I help?", placeholder="e.g. dogs, clean park, teach kids")
