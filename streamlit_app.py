@@ -87,8 +87,8 @@ def filter_by_weather(df, tag):
     return df[df["Weather Badge"].fillna('').str.contains(tag, case=False)] if tag else df
 
 # === Widget Key Helper ===
-def make_widget_key(prefix, event_id):
-    return f"{prefix}_{event_id}"
+def make_unique_key(prefix, event_id, idx):
+    return f"{prefix}_{event_id}_{idx}"
 
 # === UI ===
 query = st.text_input("👋️ How can I help?", placeholder="e.g. dogs, clean park, teach kids")
@@ -141,9 +141,9 @@ if st.button("Explore") and query:
             if avg_rating:
                 st.markdown(f"⭐ Community Rating: {avg_rating}/5")
 
-            with st.form(key=make_widget_key("form", event_id)):
-                rating = st.slider("Rate this event:", 1, 5, key=make_widget_key("rate", event_id))
-                comment = st.text_input("Leave feedback:", key=make_widget_key("comm", event_id))
+            with st.form(key=make_unique_key("form", event_id, idx)):
+                rating = st.slider("Rate this event:", 1, 5, key=make_unique_key("rate", event_id, idx))
+                comment = st.text_input("Leave feedback:", key=make_unique_key("comm", event_id, idx))
                 if st.form_submit_button("Submit Feedback"):
                     store_feedback(event_id, rating, comment)
                     st.success("✅ Thanks for the feedback!")
