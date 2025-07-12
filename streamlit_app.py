@@ -32,13 +32,19 @@ def load_data():
     enriched["description"] = enriched["description"].fillna("")
     enriched["short_description"] = enriched["description"].str.slice(0, 140) + "..."
     enriched["title_clean"] = enriched["title"].str.strip().str.lower()
-    enriched["search_blob"] = (
-        enriched["title"].fillna("") + " " +
-        enriched["description"].fillna("") + " " +
-        enriched["Topical Theme"].fillna("") + " " +
-        enriched["Activity Type"].fillna("") + " " +
-        enriched["primary_loc"].fillna("")
-    ).str.lower()
+    # FIXED: Create search_blob with simple string operations
+    search_blobs = []
+    for i in range(len(enriched)):
+        title = str(enriched.iloc[i]["title"]) if pd.notna(enriched.iloc[i]["title"]) else ""
+        desc = str(enriched.iloc[i]["description"]) if pd.notna(enriched.iloc[i]["description"]) else ""
+        theme = str(enriched.iloc[i]["Topical Theme"]) if "Topical Theme" in enriched.columns and pd.notna(enriched.iloc[i]["Topical Theme"]) else ""
+        activity = str(enriched.iloc[i]["Activity Type"]) if "Activity Type" in enriched.columns and pd.notna(enriched.iloc[i]["Activity Type"]) else ""
+        loc = str(enriched.iloc[i]["primary_loc"]) if "primary_loc" in enriched.columns and pd.notna(enriched.iloc[i]["primary_loc"]) else ""
+        
+        search_text = (title + " " + desc + " " + theme + " " + activity + " " + loc).lower()
+        search_blobs.append(search_text)
+    
+    enriched["search_blob"] = search_blobs
     
     # FIXED: Use a simple loop for event_id creation
     event_ids = []
