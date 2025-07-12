@@ -39,7 +39,8 @@ def load_data():
         enriched["Activity Type"].fillna("") + " " +
         enriched["primary_loc"].fillna("")
     ).str.lower()
-    enriched["event_id"] = enriched.apply(lambda row: hashlib.md5((str(row["title"]) + str(row["description"])).encode()).hexdigest(), axis=1)
+    enriched["event_id"] = enriched.apply(lambda row: hashlib.md5((str(row["title"]) + str(row["description"]))\
+                              .encode()).hexdigest(), axis=1)
     return enriched
 
 final_df = load_data()
@@ -89,7 +90,7 @@ def filter_by_weather(df, tag):
 query = st.text_input("🙋‍♀️ How can I help?", placeholder="e.g. dogs, clean park, teach kids")
 mood_input = st.selectbox("💫 Optional — Set an Intention", ["(no preference)"] + sorted(final_df["Mood/Intent"].dropna().unique()))
 zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
-weather_filter = st.selectbox("🌤️ Filter by Weather Option", ["", "Indoors", "Outdoors", "Flexible"])
+weather_filter = st.selectbox("☀️ Filter by Weather Option", ["", "Indoors", "Outdoors", "Flexible"])
 
 if st.button("Explore") and query:
     expanded_query = query
@@ -116,7 +117,7 @@ if st.button("Explore") and query:
 
     st.subheader(f"🔍 Found {len(top_results)} matching events")
 
-    for _, row in top_results.iterrows():
+    for i, (_, row) in enumerate(top_results.iterrows()):
         with st.container():
             st.markdown(f"### {row.get('title', 'Untitled Event')}")
             st.markdown(f"**Org:** {row.get('org_title', 'Unknown')} | **Date:** {row.get('start_date', 'N/A')}")
@@ -129,13 +130,14 @@ if st.button("Explore") and query:
             if avg_rating:
                 st.markdown(f"⭐ Community Rating: {avg_rating}/5")
 
-            rating = st.slider("Rate this event:", 1, 5, key=f"rate_{event_id}")
-            comment = st.text_input("Leave feedback:", key=f"comm_{event_id}")
-            if st.button("Submit Feedback", key=f"btn_{event_id}"):
+            rating = st.slider("Rate this event:", 1, 5, key=f"rate_{i}")
+            comment = st.text_input("Leave feedback:", key=f"comm_{i}")
+            if st.button("Submit Feedback", key=f"btn_{i}"):
                 store_feedback(event_id, rating, comment)
                 st.success("✅ Thanks for the feedback!")
 else:
     st.info("Enter a topic like \"food\", \"kids\", \"Inwood\", etc. to explore events.")
+
 
 
 
