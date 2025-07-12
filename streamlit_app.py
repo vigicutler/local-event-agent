@@ -39,8 +39,7 @@ def load_data():
         enriched["Activity Type"].fillna("") + " " +
         enriched["primary_loc"].fillna("")
     ).str.lower()
-    enriched["event_id"] = enriched.apply(lambda row: hashlib.md5((str(row["title"]) + str(row["description"]))
-                              .encode()).hexdigest(), axis=1)
+    enriched["event_id"] = enriched.apply(lambda row: hashlib.md5((str(row["title"]) + str(row["description"])).encode()).hexdigest(), axis=1)
     return enriched
 
 final_df = load_data()
@@ -88,15 +87,16 @@ def filter_by_weather(df, tag):
 
 # === UI ===
 query = st.text_input("🙋‍♀️ How can I help?", placeholder="e.g. dogs, clean park, teach kids")
-mood_input = st.selectbox("💫 Optional — Set an Intention", ["(no preference)"] + sorted(final_df["Mood/Intent"].dropna().unique()))
+mood_input = st.selectbox("🌫️ Optional — Set an Intention", ["(no preference)"] + sorted(final_df["Mood/Intent"].dropna().unique()))
 zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
 weather_filter = st.selectbox("☀️ Filter by Weather Option", ["", "Indoors", "Outdoors", "Flexible"])
 
 if st.button("Explore") and query:
-    expanded_query = query
+    expanded_terms = [query.lower()]
     for key, synonyms in SYNONYM_MAP.items():
         if key in query.lower():
-            expanded_query += " " + " ".join(synonyms)
+            expanded_terms.extend(synonyms)
+    expanded_query = " ".join(expanded_terms)
 
     results_df = final_df.copy()
 
@@ -113,7 +113,14 @@ if st.button("Explore") and query:
     similarities = cosine_similarity(query_vec, corpus_embeddings)[0]
     results_df["similarity"] = similarities
 
-    top_results = results_df.sort_values(by="similarity", ascending=False).head(30)
+    # === Add weighted score logic ===
+    results_df["score"] = results_df["similarity"]
+    if mood_input != "(no preference)":
+        results_df.loc[results_df["Mood/Intent"].str.contains(mood_input, na=False, case=False), "score"] += 0.1
+    if zipcode_input:
+        results_df.loc[results_df["Postcode"].astype(str).str.startswith(zipcode_input), "score"] += 0.1
+
+    top_results = results_df.sort_values(by="score", ascending=False).head(30)
 
     st.subheader(f"🔍 Found {len(top_results)} matching events")
 
@@ -130,13 +137,10 @@ if st.button("Explore") and query:
             if avg_rating:
                 st.markdown(f"⭐ Community Rating: {avg_rating}/5")
 
-            rating_key = f"rate_{event_id}"
-            comment_key = f"comm_{event_id}"
-            submit_key = f"btn_{event_id}"
-
-            rating = st.slider("Rate this event:", 1, 5, key=rating_key)
-            comment = st.text_input("Leave feedback:", key=comment_key)
-            if st.button("Submit Feedback", key=submit_key):
+            unique_suffix = f"{event_id}_{i}"
+            rating = st.slider("Rate this event:", 1, 5, key=f"rate_{unique_suffix}")
+            comment = st.text_input("Leave feedback:", key=f"comm_{unique_suffix}")
+            if st.button("Submit Feedback", key=f"submit_{unique_suffix}"):
                 store_feedback(event_id, rating, comment)
                 st.success("✅ Thanks for the feedback!")
 else:
