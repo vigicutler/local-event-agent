@@ -35,37 +35,50 @@ SYNONYM_MAP = {
 # === Load Data ===
 @st.cache_data
 def load_data():
+    st.write("🔍 Starting to load CSV...")
     enriched = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
+    st.write("✅ CSV loaded successfully!")
     
-    # Clean up the data manually without pandas string operations
-    data_rows = []
-    for idx in range(len(enriched)):
-        row = enriched.iloc[idx].to_dict()
-        
-        # Get title and description safely
-        title = row.get("title", "")
-        if pd.isna(title):
-            title = ""
-        title = str(title)
-        
-        description = row.get("description", "")
-        if pd.isna(description):
-            description = ""
-        description = str(description)
-        
-        # Create derived fields
-        row["title"] = title
-        row["description"] = description
-        row["short_description"] = description[:140] + "..."
-        row["title_clean"] = title.strip().lower()
-        row["search_blob"] = (title + " " + description).lower()
-        row["event_id"] = hashlib.md5((title + description).encode()).hexdigest()
-        
-        data_rows.append(row)
+    st.write("🔍 Checking data shape:", enriched.shape)
+    st.write("🔍 Columns:", list(enriched.columns))
     
-    # Create new dataframe from cleaned data
-    final_df = pd.DataFrame(data_rows)
-    return final_df
+    # Show first few rows to debug
+    st.write("🔍 First row data types:")
+    st.write(enriched.dtypes.head())
+    
+    # Check for problematic columns
+    st.write("🔍 Sample of first row:")
+    first_row = enriched.iloc[0]
+    for col in ["title", "description"]:
+        if col in enriched.columns:
+            val = first_row[col]
+            st.write(f"  {col}: {type(val)} = {val}")
+    
+    # Try the simplest possible approach
+    st.write("🔍 Creating simple dataframe...")
+    
+    # Convert to basic Python data first
+    simple_data = []
+    for i in range(min(10, len(enriched))):  # Start with just 10 rows
+        row_dict = {}
+        for col in enriched.columns:
+            val = enriched.iloc[i][col]
+            if pd.isna(val):
+                val = ""
+            row_dict[col] = str(val)
+        simple_data.append(row_dict)
+    
+    # Create new dataframe from clean data
+    clean_df = pd.DataFrame(simple_data)
+    
+    # Add derived columns
+    clean_df["short_description"] = clean_df["description"].apply(lambda x: str(x)[:140] + "...")
+    clean_df["title_clean"] = clean_df["title"].apply(lambda x: str(x).strip().lower())
+    clean_df["search_blob"] = clean_df.apply(lambda row: (str(row["title"]) + " " + str(row["description"])).lower(), axis=1)
+    clean_df["event_id"] = clean_df.apply(lambda row: hashlib.md5((str(row["title"]) + str(row["description"])).encode()).hexdigest(), axis=1)
+    
+    st.write("✅ Successfully created clean dataframe!")
+    return clean_df
 
 try:
     final_df = load_data()
