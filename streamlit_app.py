@@ -51,14 +51,16 @@ def load_data():
         enriched["title_clean"] = enriched["title"].str.strip().str.lower()
         
         # Build search blob with available columns
-        search_parts = [enriched["title"].fillna(""), enriched["description"].fillna("")]
+        enriched["search_blob"] = (
+            enriched["title"].fillna("") + " " +
+            enriched["description"].fillna("")
+        ).str.lower()
         
+        # Add optional columns if they exist
         optional_columns = ["Topical Theme", "Activity Type", "primary_loc"]
         for col in optional_columns:
             if col in enriched.columns:
-                search_parts.append(enriched[col].fillna(""))
-        
-        enriched["search_blob"] = " ".join(search_parts).str.lower()
+                enriched["search_blob"] = enriched["search_blob"] + " " + enriched[col].fillna("").str.lower()
         
         enriched["event_id"] = enriched.apply(
             lambda row: hashlib.md5((str(row["title"]) + str(row["description"])).encode()).hexdigest(), 
@@ -66,7 +68,7 @@ def load_data():
         )
         
         # Log available columns for debugging
-        st.sidebar.write("Available columns:", list(enriched.columns))
+        print("Available columns:", list(enriched.columns))
         
         return enriched
     except FileNotFoundError:
@@ -279,7 +281,8 @@ def display_event(row, event_index):
 # === UI ===
 st.markdown("### Search for Events")
 query = st.text_input("👋️ How can I help?", placeholder="e.g. dogs, clean park, teach kids")
-mood_input = st.selectbox("🌫️ Optional — Set an Intention", ["(no preference)"] + sorted(final_df["Mood/Intent"].dropna().unique()))
+mood_input = st.selectbox("🌫️ Optional — Set an Intention", 
+                          ["(no preference)"] + (sorted(final_df["Mood/Intent"].dropna().unique()) if "Mood/Intent" in final_df.columns else []))
 zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
 weather_filter = st.selectbox("☀️ Filter by Weather Option", ["", "Indoors", "Outdoors", "Flexible"])
 
