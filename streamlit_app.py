@@ -24,24 +24,33 @@ SYNONYM_MAP = {
     "dogs": ["dogs", "pets", "canines", "puppies", "animal care"]
 }
 
-# === Load Data ===
+# === Load Data - BULLETPROOF VERSION ===
 @st.cache_data
 def load_data():
+    # Load CSV
     enriched = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
     enriched.columns = enriched.columns.str.strip()
-    enriched["description"] = enriched["description"].fillna("")
+    
+    # Convert ALL columns to string to avoid any Series/object issues
+    for col in enriched.columns:
+        enriched[col] = enriched[col].astype(str).replace('nan', '').replace('None', '')
+    
+    # Now create derived columns safely
+    enriched["description"] = enriched["description"]
     enriched["short_description"] = enriched["description"].str.slice(0, 140) + "..."
     enriched["title_clean"] = enriched["title"].str.strip().str.lower()
+    
+    # Create search blob safely
     enriched["search_blob"] = (
-        enriched["title"].fillna("") + " " +
-        enriched["description"].fillna("") + " " +
-        enriched["Topical Theme"].fillna("") + " " +
-        enriched["Activity Type"].fillna("") + " " +
-        enriched["primary_loc"].fillna("")
+        enriched["title"] + " " +
+        enriched["description"] + " " +
+        enriched.get("Topical Theme", "") + " " +
+        enriched.get("Activity Type", "") + " " +
+        enriched.get("primary_loc", "")
     ).str.lower()
     
-    # ONLY CHANGE: Fix this ONE line that was broken
-    enriched["event_id"] = [hashlib.md5((str(row["title"]) + str(row["description"])).encode()).hexdigest() for _, row in enriched.iterrows()]
+    # Create event IDs safely
+    enriched["event_id"] = enriched.index.astype(str) + "_" + enriched["title"].str[:10]
     
     return enriched
 
@@ -86,16 +95,24 @@ def get_event_rating(event_id):
     return round(ratings.mean(), 2) if not ratings.empty else None
 
 def filter_by_weather(df, tag):
-    return df[df["Weather Badge"].fillna('').str.contains(tag, case=False)] if tag else df
+    if "Weather Badge" in df.columns:
+        return df[df["Weather Badge"].str.contains(tag, case=False, na=False)] if tag else df
+    return df
 
 # === Widget Key Helper ===
 def make_unique_key(prefix, event_id, loop_idx):
-    safe_id = str(event_id)[:10]  # shorten hash to avoid duplication
-    return f"{prefix}_{safe_id}_{loop_idx}"
+    return f"{prefix}_{str(event_id).replace(' ', '_')}_{loop_idx}"
 
 # === UI ===
 query = st.text_input("👋️ How can I help?", placeholder="e.g. dogs, clean park, teach kids")
-mood_input = st.selectbox("🌫️ Optional — Set an Intention", ["(no preference)"] + sorted(final_df["Mood/Intent"].dropna().unique()))
+
+# Safe mood selector
+mood_options = ["(no preference)"]
+if "Mood/Intent" in final_df.columns:
+    unique_moods = final_df["Mood/Intent"].unique()
+    mood_options.extend([m for m in unique_moods if m and m != ""])
+mood_input = st.selectbox("🌫️ Optional — Set an Intention", mood_options)
+
 zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
 weather_filter = st.selectbox("☀️ Filter by Weather Option", ["", "Indoors", "Outdoors", "Flexible"])
 
@@ -108,24 +125,33 @@ if st.button("Explore") and query:
 
     results_df = final_df.copy()
 
-    if mood_input != "(no preference)":
+    # Safe filtering
+    if mood_input != "(no preference)" and "Mood/Intent" in results_df.columns:
         results_df = results_df[results_df["Mood/Intent"].str.contains(mood_input, na=False, case=False)]
 
-    if zipcode_input:
-        results_df = results_df[results_df["Postcode"].astype(str).str.startswith(zipcode_input)]
+    if zipcode_input and "Postcode" in results_df.columns:
+        results_df = results_df[results_df["Postcode"].str.startswith(zipcode_input, na=False)]
 
     results_df = filter_by_weather(results_df, weather_filter)
-    results_df = results_df[~results_df["start_date"].fillna("").str.contains("2011|2012|2013|2014|2015")]
+    
+    # Safe date filtering
+    date_col = "start_date_date" if "start_date_date" in results_df.columns else "start_date"
+    if date_col in results_df.columns:
+        results_df = results_df[~results_df[date_col].str.contains("2011|2012|2013|2014|2015", na=False)]
 
     query_vec = embedder.encode([expanded_query], show_progress_bar=False)
     similarities = cosine_similarity(query_vec, corpus_embeddings)[0]
     results_df["similarity"] = similarities
+    results_df["score"] = similarities
 
-    results_df["score"] = results_df["similarity"]
-    if mood_input != "(no preference)":
-        results_df.loc[results_df["Mood/Intent"].str.contains(mood_input, na=False, case=False), "score"] += 0.1
-    if zipcode_input:
-        results_df.loc[results_df["Postcode"].astype(str).str.startswith(zipcode_input), "score"] += 0.1
+    # Safe scoring
+    if mood_input != "(no preference)" and "Mood/Intent" in results_df.columns:
+        mask = results_df["Mood/Intent"].str.contains(mood_input, na=False, case=False)
+        results_df.loc[mask, "score"] += 0.1
+    
+    if zipcode_input and "Postcode" in results_df.columns:
+        mask = results_df["Postcode"].str.startswith(zipcode_input, na=False)
+        results_df.loc[mask, "score"] += 0.1
 
     top_results = results_df.sort_values(by="score", ascending=False).head(30)
 
@@ -135,24 +161,47 @@ if st.button("Explore") and query:
         event_id = row.event_id
         with st.container():
             st.markdown(f"### {row.get('title', 'Untitled Event')}")
-            st.markdown(f"**Org:** {row.get('org_title', 'Unknown')} | **Date:** {row.get('start_date', 'N/A')}")
-            st.markdown(f"📍 {row.get('primary_loc', 'Unknown')}  ")
-            st.markdown(f"🏷️ `{row.get('Topical Theme', '')}` `{row.get('Effort Estimate', '')}` `{row.get('Mood/Intent', '')}` `{row.get('Weather Badge', '')}`")
+            
+            # Safe display
+            org = row.get('org_title', 'Unknown')
+            date = row.get('start_date_date', row.get('start_date', 'N/A'))
+            loc = row.get('primary_loc', 'Unknown')
+            
+            st.markdown(f"**Org:** {org} | **Date:** {date}")
+            st.markdown(f"📍 {loc}")
+            
+            # Safe tags
+            tags = []
+            for tag_col in ['Topical Theme', 'Effort Estimate', 'Mood/Intent', 'Weather Badge']:
+                if tag_col in row and row[tag_col] and row[tag_col] != "":
+                    tags.append(f"`{row[tag_col]}`")
+            if tags:
+                st.markdown(f"🏷️ {' '.join(tags)}")
+            
             st.markdown(f"{row.get('short_description', '')}")
 
             avg_rating = get_event_rating(event_id)
             if avg_rating:
                 st.markdown(f"⭐ Community Rating: {avg_rating}/5")
 
-            with st.form(key=make_unique_key("form", event_id, loop_idx)):
-                rating = st.slider("Rate this event:", 1, 5, key=make_unique_key("rate", event_id, loop_idx))
-                comment = st.text_input("Leave feedback:", key=make_unique_key("comm", event_id, loop_idx))
-                if st.form_submit_button("Submit Feedback"):
+            # Simple feedback without forms
+            col1, col2, col3 = st.columns([2, 3, 1])
+            
+            with col1:
+                rating = st.slider("Rate:", 1, 5, 3, key=make_unique_key("rate", event_id, loop_idx))
+            
+            with col2:
+                comment = st.text_input("Comment:", key=make_unique_key("comm", event_id, loop_idx), placeholder="Leave feedback...")
+            
+            with col3:
+                if st.button("Submit", key=make_unique_key("submit", event_id, loop_idx)):
                     store_feedback(event_id, rating, comment)
-                    st.success("✅ Thanks for the feedback!")
+                    st.success("✅ Thanks!")
+            
+            st.markdown("---")
+
 else:
     st.info("Enter a topic like \"food\", \"kids\", \"Inwood\", etc. to explore events.")
-
 
 
 
