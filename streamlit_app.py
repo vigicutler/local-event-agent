@@ -1,20 +1,16 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
+import sqlite3
 import hashlib
 import os
 from datetime import datetime
+from fuzzywuzzy import fuzz
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from sentence_transformers import SentenceTransformer
 
 FEEDBACK_CSV = "feedback_backup.csv"
 
-st.set_page_config(page_title="🌱 NYC Community Event Agent")
-st.title("🌱 NYC Community Event Agent")
-st.markdown("Choose how you'd like to help and find meaningful events near you.")
-
-# === Synonym Expansion ===
+# === Synonym Expansion Map ===
 SYNONYM_MAP = {
     "kids": ["youth", "children", "students", "tutoring"],
     "plant tree": ["planting", "gardening", "trees", "green", "environment"],
@@ -24,185 +20,248 @@ SYNONYM_MAP = {
     "dogs": ["dogs", "pets", "canines", "puppies", "animal care"]
 }
 
-# === Load Data - BULLETPROOF VERSION ===
+# === Load Event Data ===
 @st.cache_data
 def load_data():
-    # Load CSV
     enriched = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
+    raw = pd.read_csv("NYC_Service__Volunteer_Opportunities__Historical__20250626.csv")
+
     enriched.columns = enriched.columns.str.strip()
-    
-    # Convert ALL columns to string to avoid any Series/object issues
-    for col in enriched.columns:
-        enriched[col] = enriched[col].astype(str).replace('nan', '').replace('None', '')
-    
-    # Now create derived columns safely
-    enriched["description"] = enriched["description"]
+    raw.columns = raw.columns.str.strip()
+
+    enriched["description"] = enriched["description"].fillna("")
     enriched["short_description"] = enriched["description"].str.slice(0, 140) + "..."
+
     enriched["title_clean"] = enriched["title"].str.strip().str.lower()
-    
-    # Create search blob safely
-    enriched["search_blob"] = (
-        enriched["title"] + " " +
-        enriched["description"] + " " +
-        enriched.get("Topical Theme", "") + " " +
-        enriched.get("Activity Type", "") + " " +
-        enriched.get("primary_loc", "")
+    raw["title_clean"] = raw["title"].str.strip().str.lower()
+
+    merged = pd.merge(
+        enriched,
+        raw,
+        on="title_clean",
+        how="left",
+        suffixes=("", "_y")
+    )
+
+    def infer_mood(description):
+        desc = str(description).lower()
+        if any(word in desc for word in ["meditate", "journal", "quiet", "contemplation", "healing"]):
+            return "Reflect"
+        if any(word in desc for word in ["party", "social", "connect", "meet", "talk"]):
+            return "Connect"
+        if any(word in desc for word in ["support", "uplift", "inspire", "empower"]):
+            return "Uplift"
+        return ""
+
+    merged["Mood/Intent"] = merged.apply(
+        lambda row: row["Mood/Intent"] if pd.notna(row.get("Mood/Intent")) and row["Mood/Intent"].strip() != ""
+        else infer_mood(row.get("description", "")),
+        axis=1
+    )
+
+    location_cols = [
+        "primary_loc", "primary_loc_y", "locality", "Borough", "City", "Postcode",
+        "Location Name", "Street Address", "Address 1", "Address 2"
+    ]
+    existing_cols = [col for col in location_cols if col in merged.columns]
+    merged["primary_loc"] = merged[existing_cols].bfill(axis=1).iloc[:, 0].fillna("Unknown")
+
+    title_col = "title" if "title" in merged.columns else "title_clean"
+
+    for col in ["description", "Topical Theme", "Activity Type", "primary_loc", "Postcode", "City"]:
+        if col not in merged.columns:
+            merged[col] = ""
+
+    merged["search_blob"] = (
+        merged[title_col].fillna("").astype(str) + " " +
+        merged["description"].fillna("").astype(str) + " " +
+        merged["Topical Theme"].fillna("").astype(str) + " " +
+        merged["Activity Type"].fillna("").astype(str) + " " +
+        merged["primary_loc"].fillna("").astype(str) + " " +
+        merged["Postcode"].fillna("").astype(str) + " " +
+        merged["City"].fillna("").astype(str)
     ).str.lower()
-    
-    # Create event IDs safely
-    enriched["event_id"] = enriched.index.astype(str) + "_" + enriched["title"].str[:10]
-    
-    return enriched
+
+    return merged
 
 final_df = load_data()
 
-# === Embeddings Setup ===
-@st.cache_resource
-def load_embedder():
-    return SentenceTransformer("all-MiniLM-L6-v2")
+# === TF-IDF Setup ===
+vectorizer = TfidfVectorizer(stop_words='english')
+tfidf_matrix = vectorizer.fit_transform(final_df["search_blob"])
 
-embedder = load_embedder()
-corpus_embeddings = embedder.encode(final_df["search_blob"].tolist(), show_progress_bar=False)
-
-# === Feedback Logic ===
+# === Feedback Storage ===
 def ensure_feedback_csv():
-    if not os.path.exists(FEEDBACK_CSV):
-        pd.DataFrame(columns=["event_id", "rating", "comment", "timestamp"]).to_csv(FEEDBACK_CSV, index=False)
+    try:
+        if not os.path.exists(FEEDBACK_CSV):
+            pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"]).to_csv(FEEDBACK_CSV, index=False)
+        with open(FEEDBACK_CSV, 'a'): pass
+    except Exception as e:
+        st.session_state.feedback_memory = pd.DataFrame([
+            {"user": "vigi",  "event_id": "evt_park",   "rating": 5, "comment": "Love park events!", "timestamp": datetime.utcnow()},
+            {"user": "juan",  "event_id": "evt_nature", "rating": 4, "comment": "Educational and relaxing.", "timestamp": datetime.utcnow()},
+            {"user": "bruce", "event_id": "evt_animals", "rating": 5, "comment": "Great for animal lovers!", "timestamp": datetime.utcnow()},
+            {"user": "ana",   "event_id": "evt_art_kids", "rating": 4, "comment": "Loved the creative activities.", "timestamp": datetime.utcnow()},
+            {"user": "andy",  "event_id": "evt_tech_music", "rating": 5, "comment": "Really cool tech + music combo.", "timestamp": datetime.utcnow()}
+        ])
+        st.warning("⚠️ Feedback is temporarily stored in memory. Changes won't persist between sessions.")
 
 ensure_feedback_csv()
 
+# === Feedback Helpers ===
 def load_feedback():
-    if os.path.exists(FEEDBACK_CSV):
+    try:
         return pd.read_csv(FEEDBACK_CSV)
-    return pd.DataFrame(columns=["event_id", "rating", "comment", "timestamp"])
+    except:
+        return st.session_state.get("feedback_memory", pd.DataFrame(columns=["user", "event_id", "rating", "comment", "timestamp"]))
 
 def save_feedback(df):
-    df.to_csv(FEEDBACK_CSV, index=False)
+    try:
+        df.to_csv(FEEDBACK_CSV, index=False)
+    except:
+        st.session_state.feedback_memory = df
 
-def store_feedback(event_id, rating, comment):
+def store_user_feedback(user, event_id, rating, comment):
     df = load_feedback()
     timestamp = datetime.utcnow().isoformat()
-    idx = df[df.event_id == event_id].index
+    idx = df[(df.user == user) & (df.event_id == event_id)].index
     if len(idx):
         df.loc[idx, ["rating", "comment", "timestamp"]] = [rating, comment, timestamp]
     else:
-        df = pd.concat([df, pd.DataFrame([{"event_id": event_id, "rating": rating, "comment": comment, "timestamp": timestamp}])], ignore_index=True)
+        df = pd.concat([df, pd.DataFrame([{"user": user, "event_id": event_id, "rating": rating, "comment": comment, "timestamp": timestamp}])], ignore_index=True)
     save_feedback(df)
 
-def get_event_rating(event_id):
+def get_user_feedback(user, event_id):
+    df = load_feedback()
+    row = df[(df.user == user) & (df.event_id == event_id)]
+    if not row.empty:
+        return int(row.iloc[0].rating), row.iloc[0].comment
+    return None, ""
+
+def get_event_average_rating(event_id):
     df = load_feedback()
     ratings = df[df.event_id == event_id]["rating"]
     return round(ratings.mean(), 2) if not ratings.empty else None
 
-def filter_by_weather(df, tag):
-    if "Weather Badge" in df.columns:
-        return df[df["Weather Badge"].str.contains(tag, case=False, na=False)] if tag else df
-    return df
+def get_event_rating_count(event_id):
+    df = load_feedback()
+    return df[df.event_id == event_id].shape[0]
 
-# === Widget Key Helper ===
-def make_unique_key(prefix, event_id, loop_idx):
-    return f"{prefix}_{str(event_id).replace(' ', '_')}_{loop_idx}"
+def get_user_history(user):
+    return load_feedback()[load_feedback().user == user]
 
-# === UI ===
-query = st.text_input("👋️ How can I help?", placeholder="e.g. dogs, clean park, teach kids")
+def recommend_similar_events(user, top_n=5):
+    history = get_user_history(user)
+    if history.empty:
+        return pd.DataFrame()
+    rated_events = final_df.copy()
+    rated_events["event_id"] = rated_events.apply(lambda row: hashlib.md5((str(row.get("title", "")) + str(row.get("description", ""))).encode()).hexdigest(), axis=1)
+    joined = pd.merge(history, rated_events, on="event_id")
+    if joined.empty:
+        return pd.DataFrame()
+    liked = joined[joined.rating >= 4]
+    if liked.empty:
+        return pd.DataFrame()
+    liked_vec = vectorizer.transform(liked["search_blob"])
+    sim_scores = cosine_similarity(liked_vec, tfidf_matrix).mean(axis=0)
+    indices = sim_scores.argsort()[-top_n:][::-1]
+    return final_df.iloc[indices]
 
-# Safe mood selector
-mood_options = ["(no preference)"]
-if "Mood/Intent" in final_df.columns:
-    unique_moods = final_df["Mood/Intent"].unique()
-    mood_options.extend([m for m in unique_moods if m and m != ""])
-mood_input = st.selectbox("🌫️ Optional — Set an Intention", mood_options)
+# === Match (Improved) ===
+def keyword_filter(df, keyword):
+    keyword = keyword.lower()
+    return df[
+        df["Topical Theme"].str.lower().str.contains(keyword) |
+        df["Activity Type"].str.lower().str.contains(keyword) |
+        df["description"].str.lower().str.contains(keyword)
+    ]
 
-zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
-weather_filter = st.selectbox("☀️ Filter by Weather Option", ["", "Indoors", "Outdoors", "Flexible"])
-
-if st.button("Explore") and query:
+def get_top_matches(query, top_n=50):
     expanded_terms = [query.lower()]
     for key, synonyms in SYNONYM_MAP.items():
         if key in query.lower():
-            expanded_terms.extend(synonyms)
+            expanded_terms += synonyms
     expanded_query = " ".join(expanded_terms)
 
-    results_df = final_df.copy()
+    keyword_filtered = keyword_filter(final_df, query)
+    query_vec = vectorizer.transform([expanded_query])
+    similarity_scores = cosine_similarity(query_vec, tfidf_matrix).flatten()
+    top_indices = similarity_scores.argsort()[-top_n:][::-1]
+    tfidf_filtered = final_df.iloc[top_indices].copy()
+    tfidf_filtered["relevance"] = similarity_scores[top_indices]
 
-    # Safe filtering
-    if mood_input != "(no preference)" and "Mood/Intent" in results_df.columns:
-        results_df = results_df[results_df["Mood/Intent"].str.contains(mood_input, na=False, case=False)]
+    combined = pd.concat([keyword_filtered, tfidf_filtered]).drop_duplicates().head(top_n)
+    return combined
 
-    if zipcode_input and "Postcode" in results_df.columns:
-        results_df = results_df[results_df["Postcode"].str.startswith(zipcode_input, na=False)]
+# === Streamlit UI ===
+st.set_page_config(page_title="🌱 NYC Community Event Agent")
+st.title("🌱 NYC Community Event Agent")
+st.markdown("Choose how you'd like to help and find meaningful events near you.")
 
-    results_df = filter_by_weather(results_df, weather_filter)
-    
-    # Safe date filtering
-    date_col = "start_date_date" if "start_date_date" in results_df.columns else "start_date"
-    if date_col in results_df.columns:
-        results_df = results_df[~results_df[date_col].str.contains("2011|2012|2013|2014|2015", na=False)]
+if "user" not in st.session_state:
+    st.session_state.user = "Guest"
 
-    query_vec = embedder.encode([expanded_query], show_progress_bar=False)
-    similarities = cosine_similarity(query_vec, corpus_embeddings)[0]
-    results_df["similarity"] = similarities
-    results_df["score"] = similarities
+with st.sidebar:
+    st.subheader("🔐 Login")
+    username = st.text_input("Username", value=st.session_state.user)
+    if st.button("Login"):
+        st.session_state.user = username
+    st.write(f"You are logged in as: `{st.session_state.user}`")
+    if st.button("Logout"):
+        st.session_state.user = "Guest"
 
-    # Safe scoring
-    if mood_input != "(no preference)" and "Mood/Intent" in results_df.columns:
-        mask = results_df["Mood/Intent"].str.contains(mood_input, na=False, case=False)
-        results_df.loc[mask, "score"] += 0.1
-    
-    if zipcode_input and "Postcode" in results_df.columns:
-        mask = results_df["Postcode"].str.startswith(zipcode_input, na=False)
-        results_df.loc[mask, "score"] += 0.1
+intent_input = st.text_input("🙋‍♀️ How can I help?", placeholder="e.g. help with dogs, teach kids")
+mood_input = st.selectbox("💫 Optional — Set an Intention", ["(no preference)", "Uplift", "Unwind", "Connect", "Empower", "Reflect"])
+zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
 
-    top_results = results_df.sort_values(by="score", ascending=False).head(30)
+if st.button("Explore"):
+    query = intent_input.strip()
+    if query:
+        results = get_top_matches(query)
+        if mood_input != "(no preference)":
+            results = results[results["Mood/Intent"].str.contains(mood_input, case=False, na=False)]
+        if zipcode_input:
+            results = results[results["Postcode"].astype(str).str.startswith(zipcode_input.strip())]
 
-    st.subheader(f"🔍 Found {len(top_results)} matching events")
+        st.subheader(f"🔍 Found {len(results)} matching events")
 
-    for loop_idx, (_, row) in enumerate(top_results.iterrows()):
-        event_id = row.event_id
-        with st.container():
-            st.markdown(f"### {row.get('title', 'Untitled Event')}")
-            
-            # Safe display
-            org = row.get('org_title', 'Unknown')
-            date = row.get('start_date_date', row.get('start_date', 'N/A'))
-            loc = row.get('primary_loc', 'Unknown')
-            
-            st.markdown(f"**Org:** {org} | **Date:** {date}")
-            st.markdown(f"📍 {loc}")
-            
-            # Safe tags
-            tags = []
-            for tag_col in ['Topical Theme', 'Effort Estimate', 'Mood/Intent', 'Weather Badge']:
-                if tag_col in row and row[tag_col] and row[tag_col] != "":
-                    tags.append(f"`{row[tag_col]}`")
-            if tags:
-                st.markdown(f"🏷️ {' '.join(tags)}")
-            
-            st.markdown(f"{row.get('short_description', '')}")
+        for _, row in results.iterrows():
+            with st.container():
+                st.markdown(f"### {row.get('title', 'Untitled Event')}")
+                st.markdown(f"**Organization:** {row.get('org_title_y', 'Unknown')}")
+                st.markdown(f"📍 **Location:** {row.get('primary_loc', 'Unknown')}")
+                st.markdown(f"📅 **Date:** {row.get('start_date_date_y', 'N/A')}")
+                st.markdown(f"🏷️ `{row.get('Topical Theme', '')}` `{row.get('Effort Estimate', '')}` `{row.get('Mood/Intent', '')}`")
+                st.markdown(f"📝 {row.get('short_description', '')}")
 
-            avg_rating = get_event_rating(event_id)
-            if avg_rating:
-                st.markdown(f"⭐ Community Rating: {avg_rating}/5")
+                event_id = hashlib.md5((row.get("title", "") + row.get("description", "")).encode()).hexdigest()
+                avg_rating = get_event_average_rating(event_id)
+                count = get_event_rating_count(event_id)
+                if avg_rating is not None:
+                    st.markdown(f"⭐ **Community Rating:** {avg_rating} / 5 ({count} ratings)")
 
-            # Simple feedback without forms
-            col1, col2, col3 = st.columns([2, 3, 1])
-            
-            with col1:
-                rating = st.slider("Rate:", 1, 5, 3, key=make_unique_key("rate", event_id, loop_idx))
-            
-            with col2:
-                comment = st.text_input("Comment:", key=make_unique_key("comm", event_id, loop_idx), placeholder="Leave feedback...")
-            
-            with col3:
-                if st.button("Submit", key=make_unique_key("submit", event_id, loop_idx)):
-                    store_feedback(event_id, rating, comment)
-                    st.success("✅ Thanks!")
-            
+                user_rating, user_comment = get_user_feedback(st.session_state.user, event_id)
+                with st.form(key=f"form_{event_id}_{st.session_state.user}"):
+                    rating = st.slider("Rate this event:", 1, 5, value=user_rating or 3)
+                    comment = st.text_input("Leave feedback:", value=user_comment)
+                    if st.form_submit_button("Submit Feedback"):
+                        store_user_feedback(st.session_state.user, event_id, rating, comment)
+                        st.success("✅ Feedback submitted and saved.")
+
+        recs = recommend_similar_events(st.session_state.user)
+        if not recs.empty:
             st.markdown("---")
+            st.subheader("🎯 Recommended Events Based on Your Ratings")
+            for _, row in recs.iterrows():
+                st.markdown(f"- **{row.get('title')}** ({row.get('primary_loc', 'Unknown')})")
 
-else:
-    st.info("Enter a topic like \"food\", \"kids\", \"Inwood\", etc. to explore events.")
-
+        history = get_user_history(st.session_state.user)
+        if not history.empty:
+            st.markdown("---")
+            st.subheader("📝 Your Feedback History")
+            st.dataframe(history.sort_values("timestamp", ascending=False).reset_index(drop=True))
+    else:
+        st.warning("Please enter a topic you'd like to help with.")
 
 
 
