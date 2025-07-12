@@ -14,6 +14,12 @@ st.set_page_config(page_title="🌱 NYC Community Event Agent")
 st.title("🌱 NYC Community Event Agent")
 st.markdown("Choose how you'd like to help and find meaningful events near you.")
 
+# Initialize session state
+if 'search_results' not in st.session_state:
+    st.session_state.search_results = None
+if 'feedback_submitted' not in st.session_state:
+    st.session_state.feedback_submitted = {}
+
 # === Synonym Expansion ===
 SYNONYM_MAP = {
     "kids": ["youth", "children", "students", "tutoring"],
@@ -137,18 +143,8 @@ def filter_by_weather(df, tag):
         st.warning(f"⚠️ Error filtering by weather: {str(e)}")
         return df
 
-# === Fixed Widget Key Helper ===
-def make_unique_key(prefix, event_id, loop_idx):
-    # Use full event_id and loop_idx to ensure uniqueness
-    return f"{prefix}_{event_id}_{loop_idx}"
-
-# === UI ===
-query = st.text_input("👋️ How can I help?", placeholder="e.g. dogs, clean park, teach kids")
-mood_input = st.selectbox("🌫️ Optional — Set an Intention", ["(no preference)"] + sorted(final_df["Mood/Intent"].dropna().unique()))
-zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
-weather_filter = st.selectbox("☀️ Filter by Weather Option", ["", "Indoors", "Outdoors", "Flexible"])
-
-if st.button("Explore") and query:
+# === Search Function ===
+def perform_search(query, mood_input, zipcode_input, weather_filter):
     try:
         # Expand query with synonyms
         expanded_terms = [query.lower()]
@@ -189,59 +185,90 @@ if st.button("Explore") and query:
             zip_mask = results_df["Postcode"].astype(str).str.startswith(zipcode_input)
             results_df.loc[zip_mask, "score"] += 0.1
 
-        top_results = results_df.sort_values(by="score", ascending=False).head(30)
-
-        st.subheader(f"🔍 Found {len(top_results)} matching events")
-
-        # Display results with unique keys
-        for loop_idx, (_, row) in enumerate(top_results.iterrows()):
-            event_id = row.event_id
-            
-            with st.container():
-                st.markdown(f"### {row.get('title', 'Untitled Event')}")
-                st.markdown(f"**Org:** {row.get('org_title', 'Unknown')} | **Date:** {row.get('start_date', 'N/A')}")
-                st.markdown(f"📍 {row.get('primary_loc', 'Unknown')}")
-                
-                # Display tags
-                tags = []
-                for tag_col in ['Topical Theme', 'Effort Estimate', 'Mood/Intent', 'Weather Badge']:
-                    if row.get(tag_col):
-                        tags.append(f"`{row.get(tag_col)}`")
-                if tags:
-                    st.markdown(f"🏷️ {' '.join(tags)}")
-                
-                st.markdown(f"{row.get('short_description', '')}")
-
-                # Display average rating
-                avg_rating = get_event_rating(event_id)
-                if avg_rating:
-                    st.markdown(f"⭐ Community Rating: {avg_rating}/5")
-
-                # Feedback form with unique key
-                with st.form(key=make_unique_key("form", event_id, loop_idx)):
-                    rating = st.slider(
-                        "Rate this event:", 
-                        1, 5, 
-                        key=make_unique_key("rate", event_id, loop_idx)
-                    )
-                    comment = st.text_input(
-                        "Leave feedback:", 
-                        key=make_unique_key("comm", event_id, loop_idx)
-                    )
-                    if st.form_submit_button("Submit Feedback"):
-                        if store_feedback(event_id, rating, comment):
-                            st.success("✅ Thanks for the feedback!")
-                        else:
-                            st.error("❌ Failed to save feedback. Please try again.")
-                
-                st.markdown("---")  # Separator between events
-                
+        return results_df.sort_values(by="score", ascending=False).head(30)
+        
     except Exception as e:
         st.error(f"❌ An error occurred while searching: {str(e)}")
-        st.info("Please try a different search term or check your data files.")
+        return pd.DataFrame()
 
-elif st.button("Explore") and not query:
-    st.warning("⚠️ Please enter a search term to explore events.")
+# === UI ===
+st.markdown("### Search for Events")
+query = st.text_input("👋️ How can I help?", placeholder="e.g. dogs, clean park, teach kids")
+mood_input = st.selectbox("🌫️ Optional — Set an Intention", ["(no preference)"] + sorted(final_df["Mood/Intent"].dropna().unique()))
+zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
+weather_filter = st.selectbox("☀️ Filter by Weather Option", ["", "Indoors", "Outdoors", "Flexible"])
+
+# Search button
+if st.button("Explore", key="explore_btn"):
+    if query:
+        with st.spinner("Searching for events..."):
+            st.session_state.search_results = perform_search(query, mood_input, zipcode_input, weather_filter)
+            st.session_state.feedback_submitted = {}  # Reset feedback state
+    else:
+        st.warning("⚠️ Please enter a search term to explore events.")
+
+# Display results if they exist
+if st.session_state.search_results is not None and not st.session_state.search_results.empty:
+    top_results = st.session_state.search_results
+    st.markdown("---")
+    st.subheader(f"🔍 Found {len(top_results)} matching events")
+    
+    # Display results without forms first
+    for idx, (_, row) in enumerate(top_results.iterrows()):
+        event_id = row.event_id
+        
+        with st.container():
+            st.markdown(f"### {row.get('title', 'Untitled Event')}")
+            st.markdown(f"**Org:** {row.get('org_title', 'Unknown')} | **Date:** {row.get('start_date', 'N/A')}")
+            st.markdown(f"📍 {row.get('primary_loc', 'Unknown')}")
+            
+            # Display tags
+            tags = []
+            for tag_col in ['Topical Theme', 'Effort Estimate', 'Mood/Intent', 'Weather Badge']:
+                if row.get(tag_col):
+                    tags.append(f"`{row.get(tag_col)}`")
+            if tags:
+                st.markdown(f"🏷️ {' '.join(tags)}")
+            
+            st.markdown(f"{row.get('short_description', '')}")
+
+            # Display average rating
+            avg_rating = get_event_rating(event_id)
+            if avg_rating:
+                st.markdown(f"⭐ Community Rating: {avg_rating}/5")
+
+            # Feedback section without forms
+            st.markdown("**Rate this event:**")
+            col1, col2, col3 = st.columns([2, 3, 1])
+            
+            with col1:
+                rating = st.slider(
+                    "Rating:", 
+                    1, 5, 3,
+                    key=f"rating_{event_id}_{idx}",
+                    label_visibility="collapsed"
+                )
+            
+            with col2:
+                comment = st.text_input(
+                    "Comment:", 
+                    key=f"comment_{event_id}_{idx}",
+                    label_visibility="collapsed",
+                    placeholder="Leave your feedback..."
+                )
+            
+            with col3:
+                if st.button("Submit", key=f"submit_{event_id}_{idx}"):
+                    if store_feedback(event_id, rating, comment):
+                        st.success("✅ Thanks!")
+                        st.session_state.feedback_submitted[event_id] = True
+                    else:
+                        st.error("❌ Failed to save feedback.")
+            
+            st.markdown("---")
+
+elif st.session_state.search_results is not None and st.session_state.search_results.empty:
+    st.info("No events found matching your criteria. Try different search terms.")
 
 else:
     st.info("Enter a topic like \"food\", \"kids\", \"Inwood\", etc. to explore events.")
