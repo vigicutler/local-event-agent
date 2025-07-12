@@ -85,8 +85,12 @@ def get_event_rating(event_id):
 def filter_by_weather(df, tag):
     return df[df["Weather Badge"].fillna('').str.contains(tag, case=False)] if tag else df
 
+# === Widget Key Helper ===
+def make_widget_key(prefix, event_id, idx):
+    return f"{prefix}_{event_id}_{idx}"
+
 # === UI ===
-query = st.text_input("🙋‍♀️ How can I help?", placeholder="e.g. dogs, clean park, teach kids")
+query = st.text_input("👋️ How can I help?", placeholder="e.g. dogs, clean park, teach kids")
 mood_input = st.selectbox("🌫️ Optional — Set an Intention", ["(no preference)"] + sorted(final_df["Mood/Intent"].dropna().unique()))
 zipcode_input = st.text_input("📍 Optional — ZIP Code", placeholder="e.g. 10027")
 weather_filter = st.selectbox("☀️ Filter by Weather Option", ["", "Indoors", "Outdoors", "Flexible"])
@@ -137,14 +141,18 @@ if st.button("Explore") and query:
             if avg_rating:
                 st.markdown(f"⭐ Community Rating: {avg_rating}/5")
 
-            unique_suffix = f"{event_id}_{i}"
-            rating = st.slider("Rate this event:", 1, 5, key=f"rate_{unique_suffix}")
-            comment = st.text_input("Leave feedback:", key=f"comm_{unique_suffix}")
-            if st.button("Submit Feedback", key=f"submit_{unique_suffix}"):
+            rate_key = make_widget_key("rate", event_id, i)
+            comm_key = make_widget_key("comm", event_id, i)
+            submit_key = make_widget_key("submit", event_id, i)
+
+            rating = st.slider("Rate this event:", 1, 5, key=rate_key)
+            comment = st.text_input("Leave feedback:", key=comm_key)
+            if st.button("Submit Feedback", key=submit_key):
                 store_feedback(event_id, rating, comment)
                 st.success("✅ Thanks for the feedback!")
 else:
     st.info("Enter a topic like \"food\", \"kids\", \"Inwood\", etc. to explore events.")
+
 
 
 
