@@ -39,7 +39,7 @@ def load_data():
         enriched["Activity Type"].fillna("") + " " +
         enriched["primary_loc"].fillna("")
     ).str.lower()
-    enriched["event_id"] = enriched.apply(lambda row: hashlib.md5((str(row["title"]) + str(row["description"]))\
+    enriched["event_id"] = enriched.apply(lambda row: hashlib.md5((str(row["title"]) + str(row["description"]))
                               .encode()).hexdigest(), axis=1)
     return enriched
 
@@ -130,13 +130,18 @@ if st.button("Explore") and query:
             if avg_rating:
                 st.markdown(f"⭐ Community Rating: {avg_rating}/5")
 
-            rating = st.slider("Rate this event:", 1, 5, key=f"rate_{i}")
-            comment = st.text_input("Leave feedback:", key=f"comm_{i}")
-            if st.button("Submit Feedback", key=f"btn_{i}"):
+            rating_key = f"rate_{event_id}"
+            comment_key = f"comm_{event_id}"
+            submit_key = f"btn_{event_id}"
+
+            rating = st.slider("Rate this event:", 1, 5, key=rating_key)
+            comment = st.text_input("Leave feedback:", key=comment_key)
+            if st.button("Submit Feedback", key=submit_key):
                 store_feedback(event_id, rating, comment)
                 st.success("✅ Thanks for the feedback!")
 else:
     st.info("Enter a topic like \"food\", \"kids\", \"Inwood\", etc. to explore events.")
+
 
 
 
