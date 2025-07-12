@@ -40,13 +40,14 @@ def load_data():
         enriched["primary_loc"].fillna("")
     ).str.lower()
     
-    # FIX THE HASHLIB LINE - this was the problem!
-    def make_event_id(row):
-        title_str = str(row["title"]) if pd.notna(row["title"]) else ""
-        desc_str = str(row["description"]) if pd.notna(row["description"]) else ""
-        return hashlib.md5((title_str + desc_str).encode()).hexdigest()
-    
-    enriched["event_id"] = enriched.apply(make_event_id, axis=1)
+    # FIXED: Use a simple loop for event_id creation
+    event_ids = []
+    for i in range(len(enriched)):
+        title = str(enriched.iloc[i]["title"]) if pd.notna(enriched.iloc[i]["title"]) else ""
+        desc = str(enriched.iloc[i]["description"]) if pd.notna(enriched.iloc[i]["description"]) else ""
+        event_id = hashlib.md5((title + desc).encode()).hexdigest()
+        event_ids.append(event_id)
+    enriched["event_id"] = event_ids
     
     return enriched
 
@@ -91,7 +92,9 @@ def get_event_rating(event_id):
     return round(ratings.mean(), 2) if not ratings.empty else None
 
 def filter_by_weather(df, tag):
-    return df[df["Weather Badge"].fillna('').str.contains(tag, case=False)] if tag else df
+    if "Weather Badge" in df.columns:
+        return df[df["Weather Badge"].fillna('').str.contains(tag, case=False)] if tag else df
+    return df
 
 # === Widget Key Helper ===
 def make_unique_key(prefix, event_id, loop_idx):
@@ -119,7 +122,10 @@ if st.button("Explore") and query:
         results_df = results_df[results_df["Postcode"].astype(str).str.startswith(zipcode_input)]
 
     results_df = filter_by_weather(results_df, weather_filter)
-    results_df = results_df[~results_df["start_date"].fillna("").str.contains("2011|2012|2013|2014|2015")]
+    
+    # FIXED: Use the correct column name from your CSV
+    if "start_date_date" in results_df.columns:
+        results_df = results_df[~results_df["start_date_date"].fillna("").str.contains("2011|2012|2013|2014|2015")]
 
     query_vec = embedder.encode([expanded_query], show_progress_bar=False)
     similarities = cosine_similarity(query_vec, corpus_embeddings)[0]
@@ -139,7 +145,8 @@ if st.button("Explore") and query:
         event_id = row.event_id
         with st.container():
             st.markdown(f"### {row.get('title', 'Untitled Event')}")
-            st.markdown(f"**Org:** {row.get('org_title', 'Unknown')} | **Date:** {row.get('start_date', 'N/A')}")
+            # FIXED: Use correct column names
+            st.markdown(f"**Org:** {row.get('org_title', 'Unknown')} | **Date:** {row.get('start_date_date', 'N/A')}")
             st.markdown(f"📍 {row.get('primary_loc', 'Unknown')}  ")
             st.markdown(f"🏷️ `{row.get('Topical Theme', '')}` `{row.get('Effort Estimate', '')}` `{row.get('Mood/Intent', '')}` `{row.get('Weather Badge', '')}`")
             st.markdown(f"{row.get('short_description', '')}")
@@ -148,21 +155,19 @@ if st.button("Explore") and query:
             if avg_rating:
                 st.markdown(f"⭐ Community Rating: {avg_rating}/5")
 
-            # Simple feedback without forms to avoid duplicate key errors
+            # Simple feedback to avoid form duplicate errors
             col1, col2, col3 = st.columns([2, 3, 1])
             
             with col1:
-                rating = st.slider("Rate:", 1, 5, 3, key=f"rating_{event_id}_{loop_idx}")
+                rating = st.slider("Rate:", 1, 5, 3, key=make_unique_key("rate", event_id, loop_idx))
             
             with col2:
-                comment = st.text_input("Comment:", key=f"comment_{event_id}_{loop_idx}", placeholder="Leave feedback...")
+                comment = st.text_input("Comment:", key=make_unique_key("comm", event_id, loop_idx), placeholder="Leave feedback...")
             
             with col3:
-                if st.button("Submit", key=f"submit_{event_id}_{loop_idx}"):
+                if st.button("Submit", key=make_unique_key("submit", event_id, loop_idx)):
                     store_feedback(event_id, rating, comment)
                     st.success("✅ Thanks!")
-                    
-            st.markdown("---")
 
 else:
     st.info("Enter a topic like \"food\", \"kids\", \"Inwood\", etc. to explore events.")
