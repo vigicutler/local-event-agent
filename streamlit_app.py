@@ -39,14 +39,18 @@ def load_data():
         enriched = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
         enriched.columns = enriched.columns.str.strip()
         enriched["description"] = enriched["description"].fillna("")
+        enriched["title"] = enriched["title"].fillna("")
         enriched["short_description"] = enriched["description"].str.slice(0, 140) + "..."
         enriched["title_clean"] = enriched["title"].str.strip().str.lower()
         
-        # Build search blob - SUPER SIMPLE VERSION
-        enriched["search_blob"] = ""
-        for idx, row in enriched.iterrows():
-            search_text = str(row.get("title", "")) + " " + str(row.get("description", ""))
-            enriched.at[idx, "search_blob"] = search_text.lower()
+        # SIMPLE search blob creation
+        search_blobs = []
+        for i in range(len(enriched)):
+            title = str(enriched.iloc[i]["title"]) if pd.notna(enriched.iloc[i]["title"]) else ""
+            desc = str(enriched.iloc[i]["description"]) if pd.notna(enriched.iloc[i]["description"]) else ""
+            search_blobs.append((title + " " + desc).lower())
+        
+        enriched["search_blob"] = search_blobs
         
         enriched["event_id"] = enriched.apply(
             lambda row: hashlib.md5((str(row["title"]) + str(row["description"])).encode()).hexdigest(), 
