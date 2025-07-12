@@ -38,20 +38,36 @@ def load_data():
     try:
         enriched = pd.read_csv("Merged_Enriched_Events_CLUSTERED.csv")
         enriched.columns = enriched.columns.str.strip()
+        
+        # Handle missing columns gracefully
+        required_columns = ["title", "description"]
+        for col in required_columns:
+            if col not in enriched.columns:
+                st.error(f"❌ Required column '{col}' not found in CSV!")
+                st.stop()
+        
         enriched["description"] = enriched["description"].fillna("")
         enriched["short_description"] = enriched["description"].str.slice(0, 140) + "..."
         enriched["title_clean"] = enriched["title"].str.strip().str.lower()
-        enriched["search_blob"] = (
-            enriched["title"].fillna("") + " " +
-            enriched["description"].fillna("") + " " +
-            enriched["Topical Theme"].fillna("") + " " +
-            enriched["Activity Type"].fillna("") + " " +
-            enriched["primary_loc"].fillna("")
-        ).str.lower()
+        
+        # Build search blob with available columns
+        search_parts = [enriched["title"].fillna(""), enriched["description"].fillna("")]
+        
+        optional_columns = ["Topical Theme", "Activity Type", "primary_loc"]
+        for col in optional_columns:
+            if col in enriched.columns:
+                search_parts.append(enriched[col].fillna(""))
+        
+        enriched["search_blob"] = " ".join(search_parts).str.lower()
+        
         enriched["event_id"] = enriched.apply(
             lambda row: hashlib.md5((str(row["title"]) + str(row["description"])).encode()).hexdigest(), 
             axis=1
         )
+        
+        # Log available columns for debugging
+        st.sidebar.write("Available columns:", list(enriched.columns))
+        
         return enriched
     except FileNotFoundError:
         st.error("❌ Required CSV file 'Merged_Enriched_Events_CLUSTERED.csv' not found!")
@@ -157,17 +173,18 @@ def perform_search(query, mood_input, zipcode_input, weather_filter):
 
         results_df = final_df.copy()
 
-        # Apply filters
-        if mood_input != "(no preference)":
+        # Apply filters (check if columns exist first)
+        if mood_input != "(no preference)" and "Mood/Intent" in results_df.columns:
             results_df = results_df[results_df["Mood/Intent"].str.contains(mood_input, na=False, case=False)]
 
-        if zipcode_input:
+        if zipcode_input and "Postcode" in results_df.columns:
             results_df = results_df[results_df["Postcode"].astype(str).str.startswith(zipcode_input)]
 
         results_df = filter_by_weather(results_df, weather_filter)
         
-        # Filter out old events
-        results_df = results_df[~results_df["start_date"].fillna("").str.contains("2011|2012|2013|2014|2015")]
+        # Filter out old events (if start_date column exists)
+        if "start_date" in results_df.columns:
+            results_df = results_df[~results_df["start_date"].fillna("").str.contains("2011|2012|2013|2014|2015")]
 
         # Compute similarities
         query_vec = embedder.encode([expanded_query], show_progress_bar=False)
@@ -180,10 +197,10 @@ def perform_search(query, mood_input, zipcode_input, weather_filter):
 
         # Calculate scores
         results_df["score"] = results_df["similarity"]
-        if mood_input != "(no preference)":
+        if mood_input != "(no preference)" and "Mood/Intent" in results_df.columns:
             mood_mask = results_df["Mood/Intent"].str.contains(mood_input, na=False, case=False)
             results_df.loc[mood_mask, "score"] += 0.1
-        if zipcode_input:
+        if zipcode_input and "Postcode" in results_df.columns:
             zip_mask = results_df["Postcode"].astype(str).str.startswith(zipcode_input)
             results_df.loc[zip_mask, "score"] += 0.1
 
@@ -193,19 +210,26 @@ def perform_search(query, mood_input, zipcode_input, weather_filter):
         st.error(f"❌ An error occurred while searching: {str(e)}")
         return pd.DataFrame()
 
-# === Display Event Function ===
 def display_event(row, event_index):
     """Display a single event with feedback - no loops here"""
     event_id = row.event_id
     
     st.markdown(f"### {row.get('title', 'Untitled Event')}")
-    st.markdown(f"**Org:** {row.get('org_title', 'Unknown')} | **Date:** {row.get('start_date', 'N/A')}")
-    st.markdown(f"📍 {row.get('primary_loc', 'Unknown')}")
     
-    # Display tags
+    # Display org and date if available
+    org = row.get('org_title', row.get('organization', 'Unknown'))
+    date = row.get('start_date', row.get('date', 'N/A'))
+    st.markdown(f"**Org:** {org} | **Date:** {date}")
+    
+    # Display location if available
+    location = row.get('primary_loc', row.get('location', row.get('venue', 'Unknown')))
+    st.markdown(f"📍 {location}")
+    
+    # Display tags for available columns
     tags = []
-    for tag_col in ['Topical Theme', 'Effort Estimate', 'Mood/Intent', 'Weather Badge']:
-        if row.get(tag_col):
+    tag_columns = ['Topical Theme', 'Effort Estimate', 'Mood/Intent', 'Weather Badge', 'category', 'type']
+    for tag_col in tag_columns:
+        if tag_col in row.index and row.get(tag_col):
             tags.append(f"`{row.get(tag_col)}`")
     if tags:
         st.markdown(f"🏷️ {' '.join(tags)}")
