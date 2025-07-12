@@ -128,7 +128,7 @@ if st.button("Explore") and query:
 
     st.subheader(f"🔍 Found {len(top_results)} matching events")
 
-    for _, row in top_results.iterrows():
+    for idx, row in top_results.iterrows():
         event_id = row.event_id
         with st.container():
             st.markdown(f"### {row.get('title', 'Untitled Event')}")
@@ -149,6 +149,7 @@ if st.button("Explore") and query:
                     st.success("✅ Thanks for the feedback!")
 else:
     st.info("Enter a topic like \"food\", \"kids\", \"Inwood\", etc. to explore events.")
+
 
 
 
