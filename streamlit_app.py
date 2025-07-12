@@ -87,8 +87,8 @@ def filter_by_weather(df, tag):
     return df[df["Weather Badge"].fillna('').str.contains(tag, case=False)] if tag else df
 
 # === Widget Key Helper ===
-def make_unique_key(prefix, event_id, idx):
-    return f"{prefix}_{event_id}_{idx}"
+def make_unique_key(prefix, event_id, loop_idx):
+    return f"{prefix}_{event_id}_{loop_idx}"
 
 # === UI ===
 query = st.text_input("👋️ How can I help?", placeholder="e.g. dogs, clean park, teach kids")
@@ -128,7 +128,7 @@ if st.button("Explore") and query:
 
     st.subheader(f"🔍 Found {len(top_results)} matching events")
 
-    for idx, row in top_results.iterrows():
+    for loop_idx, (_, row) in enumerate(top_results.iterrows()):
         event_id = row.event_id
         with st.container():
             st.markdown(f"### {row.get('title', 'Untitled Event')}")
@@ -141,14 +141,15 @@ if st.button("Explore") and query:
             if avg_rating:
                 st.markdown(f"⭐ Community Rating: {avg_rating}/5")
 
-            with st.form(key=make_unique_key("form", event_id, idx)):
-                rating = st.slider("Rate this event:", 1, 5, key=make_unique_key("rate", event_id, idx))
-                comment = st.text_input("Leave feedback:", key=make_unique_key("comm", event_id, idx))
+            with st.form(key=make_unique_key("form", event_id, loop_idx)):
+                rating = st.slider("Rate this event:", 1, 5, key=make_unique_key("rate", event_id, loop_idx))
+                comment = st.text_input("Leave feedback:", key=make_unique_key("comm", event_id, loop_idx))
                 if st.form_submit_button("Submit Feedback"):
                     store_feedback(event_id, rating, comment)
                     st.success("✅ Thanks for the feedback!")
 else:
     st.info("Enter a topic like \"food\", \"kids\", \"Inwood\", etc. to explore events.")
+
 
 
 
